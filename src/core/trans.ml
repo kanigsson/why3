@@ -18,7 +18,7 @@ open Task
 
 let debug = Debug.register_info_flag "transform"
   ~desc:"Print@ debugging@ messages@ about@ application@ \
-         of@ proof@ task@ transformations."
+         of@ proof@ task@ to@ transformations."
 
 (** Task transformation *)
 
@@ -274,7 +274,7 @@ let create_debugging_trans trans_name (tran : Task.task trans) =
     print_task_goal t2;
     Debug.dprintf debug "@.@.";
     t2;
-    
+
   end in
   store new_trans
 
