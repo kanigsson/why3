@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -318,12 +318,13 @@ let prepare_task ~cntexample ?(ce_prover="cvc4_ce") drv task =
   let task = update_task drv task in
   List.fold_left apply task transl
 
-let print_task_prepared ?old drv fmt task =
+let print_task_prepared ?old ?name_table drv fmt task =
   let p = match drv.drv_printer with
     | None -> raise NoPrinter
     | Some p -> p
   in
   let printer_args = { Printer.env = drv.drv_env;
+      name_table  = name_table;
       prelude     = drv.drv_prelude;
       th_prelude  = drv.drv_thprelude;
       blacklist   = drv.drv_blacklist;
@@ -333,14 +334,14 @@ let print_task_prepared ?old drv fmt task =
   fprintf fmt "@[%a@]@?" (printer ?old) task;
   printer_args.printer_mapping
 
-let print_task ?old ?(cntexample=false) ?(ce_prover="cvc4_ce") drv fmt task =
+let print_task ?old ?(cntexample=false) ?(ce_prover="cvc4_ce") ?name_table drv fmt task =
   let task = prepare_task ~cntexample ~ce_prover drv task in
-  let _ = print_task_prepared ?old drv fmt task in
+  let _ = print_task_prepared ?old ?name_table drv fmt task in
   ()
 
-let print_theory ?old drv fmt th =
+let print_theory ?old ?name_table drv fmt th =
   let task = Task.use_export None th in
-  print_task ?old drv fmt task
+  print_task ?old ?name_table drv fmt task
 
 let file_name_of_task ?old ?inplace drv task =
   match old, inplace with
@@ -353,24 +354,24 @@ let file_name_of_task ?old ?inplace drv task =
         let fn = try Filename.chop_extension fn with Invalid_argument _ -> fn in
         get_filename drv fn "T" pr.pr_name.id_string
 
-let prove_task_prepared ~command ~limit ?old ?inplace drv task =
+let prove_task_prepared ~command ~limit ?old ?inplace ?name_table drv task =
   let buf = Buffer.create 1024 in
   let fmt = formatter_of_buffer buf in
   let old_channel = Opt.map open_in old in
   let filename = file_name_of_task ?old ?inplace drv task in
-  let printer_mapping = print_task_prepared ?old:old_channel drv fmt task in
+  let printer_mapping = print_task_prepared ?old:old_channel ?name_table drv fmt task in
   pp_print_flush fmt ();
   Opt.iter close_in old_channel;
   let res =
     call_on_buffer ~command ~limit
                    ?inplace ~filename ~printer_mapping drv buf in
   Buffer.reset buf;
-  res
+  ServerCall res
 
 let prove_task ~command ~limit ?(cntexample=false) ?(ce_prover="cvc4_ce") ?old
-               ?inplace drv task =
-  let task = prepare_task ~cntexample ~ce_prover  drv task in
-  prove_task_prepared ~command ~limit ?old ?inplace drv task
+               ?inplace ?name_table drv task =
+  let task = prepare_task ~cntexample ~ce_prover drv task in
+  prove_task_prepared ~command ~limit ?old ?inplace ?name_table drv task
 
 (* exception report *)
 

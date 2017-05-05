@@ -1,14 +1,14 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
 (*  on linking described in file LICENSE.                           *)
 (*                                                                  *)
 (********************************************************************)
-
+(*
 (** Scheduling operations on sessions and calls to provers *)
 
 (** {2 One module for calling callback when it's time to} *)
@@ -347,4 +347,5 @@ end
 Local Variables:
 compile-command: "unset LANG; make -C ../.. byte"
 End:
+*)
 *)

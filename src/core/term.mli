@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -151,6 +151,8 @@ module Hterm : Exthtbl.S with type key = term
 val t_compare : term -> term -> int
 val t_equal : term -> term -> bool
 val t_hash : term -> int
+(* Equality modulo labels and triggers *)
+val t_equal_nt_nl : term -> term -> bool
 
 (** {2 Bindings} *)
 

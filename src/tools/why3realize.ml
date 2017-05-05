@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -100,6 +100,7 @@ let do_global_theory (_tname,p,t) =
       Some (open_in backup)
     end else None in
   let cout = open_out file in
+  (* Name tables not necessary outside of ITP *)
   Driver.print_task ?old opt_driver (formatter_of_out_channel cout) task;
   close_out cout
 

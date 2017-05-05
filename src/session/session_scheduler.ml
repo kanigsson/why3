@@ -1,14 +1,14 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
 (*  on linking described in file LICENSE.                           *)
 (*                                                                  *)
 (********************************************************************)
-
+(*
 open Format
 open Session
 
@@ -153,6 +153,7 @@ let timeout_handler t =
           | Call_provers.ProverFinished res ->
               if started then t.running_proofs <- t.running_proofs - 1;
               callback (Done res)
+          | _ -> assert (false) (* TODO Never reached yet. Deprecated code anyway *)
         end
     | Any_timeout callback as c ->
         if callback () then Queue.add c q
@@ -191,6 +192,7 @@ let idle_handler t =
               old,inplace,command,driver,callback,goal) ->
             begin
               try
+                (* Name table are not used outside ITP *)
                 let call =
                   Driver.prove_task ?old ~cntexample ~inplace ~command
                     ~limit driver goal
@@ -1060,7 +1062,7 @@ module Base_scheduler (X : sig end)  =
        with Exit -> ()
 
 end)
-
+*)
 
 
 

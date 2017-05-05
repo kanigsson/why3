@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -78,6 +78,7 @@ let run_one env config filters dir fname =
             let name = Ident.string_unique fname_printer name in
             let ext = String.sub dest i (String.length dest - i) in
             let cout = open_out (Filename.concat dir (name ^ ext)) in
+            (* Name table not necessary outside of ITP *)
             Driver.print_task lp.prover_driver
               (formatter_of_out_channel cout) task;
             close_out cout

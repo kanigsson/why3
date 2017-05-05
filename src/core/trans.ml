@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -41,6 +41,8 @@ let compose_l f g x = Lists.apply g (f x)
 
 let seq l x   = List.fold_left (fun x f -> f x) x l
 let seq_l l x = List.fold_left (fun x f -> Lists.apply f x) [x] l
+
+let par (l:task trans list) x = List.map (fun f -> f x) l
 
 module Wtask = Weakhtbl.Make (struct
   type t = task_hd
@@ -331,23 +333,83 @@ let list_transforms () =
 let list_transforms_l () =
   Hstr.fold (fun k (desc,_) acc -> (k, desc)::acc) transforms_l []
 
-(** fast transform *)
+(** transformations with arguments *)
+
+type trans_with_args = string list -> Env.env -> Task.names_table -> task trans
+type trans_with_args_l = string list -> Env.env -> Task.names_table -> task tlist
+
+let transforms_with_args = Hstr.create 17
+let transforms_with_args_l = Hstr.create 17
+
+let lookup_transform_with_args s =
+ try snd (Hstr.find transforms_with_args s)
+ with Not_found -> raise (UnknownTrans s)
+
+let lookup_transform_with_args_l s =
+ try snd (Hstr.find transforms_with_args_l s)
+ with Not_found -> raise (UnknownTrans s)
+
+let list_transforms_with_args () =
+  Hstr.fold (fun k (desc,_) acc -> (k, desc)::acc) transforms_with_args []
+
+let list_transforms_with_args_l () =
+  Hstr.fold (fun k (desc,_) acc -> (k, desc)::acc) transforms_with_args_l []
+
+let register_transform_with_args ~desc s p =
+  if Hstr.mem transforms_with_args s then raise (KnownTrans s);
+  Hstr.replace transforms_with_args s (desc, fun _ -> p)
+
+let register_transform_with_args_l ~desc s p =
+  if Hstr.mem transforms_with_args_l s then raise (KnownTrans s);
+  Hstr.replace transforms_with_args_l s (desc, fun _ -> p)
+
 type gentrans =
   | Trans_one of Task.task trans
   | Trans_list of Task.task tlist
+  | Trans_with_args of trans_with_args
+  | Trans_with_args_l of trans_with_args_l
 
 let lookup_trans env name =
   try
     let t = lookup_transform name env in
     Trans_one t
   with UnknownTrans _ ->
-    let t = lookup_transform_l name env in
-    Trans_list t
+    try
+      let t = lookup_transform_l name env in
+      Trans_list t
+    with UnknownTrans _ ->
+      try
+        let t = lookup_transform_with_args name env in
+        Trans_with_args t
+      with UnknownTrans _ ->
+        let t = lookup_transform_with_args_l name env in
+        Trans_with_args_l t
+
+let list_trans () =
+  let l =
+    Hstr.fold (fun k _ acc -> k::acc) transforms_l []
+  in
+  let l =
+    Hstr.fold (fun k _ acc -> k::acc) transforms l
+  in
+  let l =
+    Hstr.fold (fun k _ acc -> k::acc) transforms_with_args l
+  in
+    Hstr.fold (fun k _ acc -> k::acc) transforms_with_args_l l
 
 let apply_transform tr_name env task =
    match lookup_trans env tr_name with
     | Trans_one t -> [apply t task]
     | Trans_list t -> apply t task
+    | Trans_with_args _ (* [apply (t []) task] *)
+    | Trans_with_args_l _ -> assert false (* apply (t []) task *)
+
+let apply_transform_args tr_name env args tables task =
+   match lookup_trans env tr_name with
+    | Trans_one t -> [apply t task]
+    | Trans_list t -> apply t task
+    | Trans_with_args t -> [apply (t args) env tables task]
+    | Trans_with_args_l t -> apply (t args) env tables task
 
 (** Flag-dependent transformations *)
 

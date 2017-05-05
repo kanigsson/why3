@@ -751,10 +751,10 @@ let add_to_stat prover pr stat =
      let obj_rec = Gnat_expl.HCheck.find explmap obj in
      let l = ref [] in
      GoalSet.iter (fun x -> l := goal_to_json x :: !l) obj_rec.toplevel;
-     Json.List !l
+     Json_base.List !l
    and goal_to_json g =
      let s = Mstr.empty in
-     Json.Record
+     Json_base.Record
        (Mstr.add "proof_attempts" (proof_attempts_to_json g)
           (Mstr.add "transformations" (transformations_to_json g) s))
    and proof_attempts_to_json g =
@@ -765,7 +765,7 @@ let add_to_stat prover pr stat =
          | false, Session.Done pr ->
            Mstr.add pr_name (proof_result_to_json pr) acc
          | _, _ -> acc) g.Session.goal_external_proofs s in
-     Json.Record r
+     Json_base.Record r
 
    and proof_result_to_json r =
      let answer =
@@ -773,10 +773,10 @@ let add_to_stat prover pr stat =
          Call_provers.print_prover_answer r.Call_provers.pr_answer in
      let s = Mstr.empty in
      let r =
-       Mstr.add "time" (Json.Float r.Call_provers.pr_time)
-         (Mstr.add "steps" (Json.Int r.Call_provers.pr_steps)
-            (Mstr.add "result" (Json.String answer) s)) in
-     Json.Record r
+       Mstr.add "time" (Json_base.Float r.Call_provers.pr_time)
+         (Mstr.add "steps" (Json_base.Int r.Call_provers.pr_steps)
+            (Mstr.add "result" (Json_base.String answer) s)) in
+     Json_base.Record r
    and transformations_to_json g =
      let map =
        Session.PHstr.fold (fun tf_name tf acc ->
@@ -784,9 +784,9 @@ let add_to_stat prover pr stat =
          g.Session.goal_transformations
          Mstr.empty
      in
-     Json.Record map
+     Json_base.Record map
    and transformation_to_json tf =
-     Json.List (List.map goal_to_json tf.Session.transf_goals)
+     Json_base.List (List.map goal_to_json tf.Session.transf_goals)
 
 end
 

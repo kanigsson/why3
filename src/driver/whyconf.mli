@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -255,6 +255,7 @@ val set_family  : config -> string -> Rc.family  -> config
 (** Common command line options *)
 
 module Args : sig
+
   val initialize :
     ?extra_help : (Format.formatter -> unit -> unit) ->
     (string * Arg.spec * string) list ->
@@ -262,4 +263,5 @@ module Args : sig
     config * config * Env.env
 
   val exit_with_usage : (string * Arg.spec * string) list -> string -> 'a
+
 end

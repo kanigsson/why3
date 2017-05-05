@@ -1,7 +1,7 @@
 ####################################################################
 #                                                                  #
 #  The Why3 Verification Platform   /   The Why3 Development Team  #
-#  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  #
+#  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  #
 #                                                                  #
 #  This software is distributed under the terms of the GNU Lesser  #
 #  General Public License version 2.1, with the special exception  #
@@ -155,7 +155,10 @@ GENERATED =
 ##############
 
 LIBGENERATED = src/util/config.ml \
-	       src/util/rc.ml src/util/lexlib.ml src/parser/lexer.ml \
+	       src/util/rc.ml src/util/lexlib.ml \
+	       src/util/json_parser.mli src/util/json_parser.ml \
+	       src/util/json_lexer.ml \
+	       src/parser/lexer.ml \
 	       src/parser/parser.mli src/parser/parser.ml \
 	       src/driver/driver_parser.mli src/driver/driver_parser.ml \
 	       src/driver/driver_lexer.ml \
@@ -167,8 +170,10 @@ LIBGENERATED = src/util/config.ml \
 
 LIB_UTIL = config bigInt util opt lists strings \
 	   extmap extset exthtbl weakhtbl \
-	   hashcons stdlib exn_printer pp json debug loc lexlib print_tree \
-	   cmdline warning sysutil rc plugin bigInt number pqueue
+	   hashcons stdlib exn_printer pp \
+	   json_base json_parser json_lexer \
+	   debug loc \
+	   lexlib print_tree cmdline warning sysutil rc plugin bigInt number pqueue
 
 LIB_CORE = ident ty term pattern decl theory \
 	   task pretty dterm env trans printer model_parser
@@ -197,6 +202,7 @@ LIB_TRANSFORM = simplify_formula inlining split_goal induction \
 		intro_vc_vars_counterexmp prepare_for_counterexmp \
 		eval_match instantiate_predicate smoke_detector \
 		reduction_engine compute induction_pr prop_curry \
+		args_wrapper case \
 		rec_logic gnat_split_conj gnat_split_disj \
 		eliminate_unused_hypo eliminate_literal
 
@@ -208,8 +214,10 @@ LIB_WHYML = mlw_ty mlw_expr mlw_decl mlw_pretty mlw_wp mlw_module \
 	    mlw_dexpr mlw_typing mlw_driver mlw_exec mlw_ocaml \
 	    mlw_main mlw_interp
 
-LIB_SESSION = compress xml termcode session session_tools strategy \
-              strategy_parser session_scheduler
+LIB_SESSION = compress xml termcode session session_itp \
+              session_tools strategy strategy_parser controller_itp \
+	      session_scheduler server_utils itp_communication \
+	      itp_server json_util
 
 LIBMODULES =  $(addprefix src/util/, $(LIB_UTIL)) \
 	      $(addprefix src/core/, $(LIB_CORE)) \
@@ -257,6 +265,10 @@ endif
 # hide deprecated warnings for strings
 src/util/strings.cmo:: WARNINGS:=$(WARNINGS)-3
 src/util/strings.cmx:: WARNINGS:=$(WARNINGS)-3
+
+# hide warning 'no cmx file was found in path for module ..., and its interface was not compiled with -opaque' for the coq tactic
+
+src/coq-tactic/why3tac.cmx:: WARNINGS:=$(WARNINGS)-58
 
 # build targets
 
@@ -525,8 +537,8 @@ bin/why3prove.opt: lib/why3/why3.cmxa src/tools/why3prove.cmx
 bin/why3prove.byte: lib/why3/why3.cma src/tools/why3prove.cmo
 bin/why3realize.opt: lib/why3/why3.cmxa src/tools/why3realize.cmx
 bin/why3realize.byte: lib/why3/why3.cma src/tools/why3realize.cmo
-bin/why3replay.opt: lib/why3/why3.cmxa src/tools/why3replay.cmx
-bin/why3replay.byte: lib/why3/why3.cma src/tools/why3replay.cmo
+bin/why3replay.opt: lib/why3/why3.cmxa src/tools/unix_scheduler.cmx src/tools/why3replay.cmx
+bin/why3replay.byte: lib/why3/why3.cma src/tools/unix_scheduler.cmo src/tools/why3replay.cmo
 bin/why3wc.opt: src/tools/why3wc.cmx
 bin/why3wc.byte: src/tools/why3wc.cmo
 
@@ -797,7 +809,7 @@ xml-validate-local:
 
 ifeq (@enable_ide@,yes)
 
-IDE_FILES = gconfig gmain
+IDE_FILES = gconfig ide_utils why3ide
 
 IDEMODULES = $(addprefix src/ide/, $(IDE_FILES))
 
@@ -848,6 +860,54 @@ install_local:: bin/why3ide
 
 endif
 
+
+###############
+# WEBSERV
+###############
+
+WEBSERV_FILES = wserver why3web
+
+WEBSERVMODULES = $(addprefix src/ide/, $(WEBSERV_FILES))
+
+WEBSERVDEP = $(addsuffix .dep, $(WEBSERVMODULES))
+WEBSERVCMO = $(addsuffix .cmo, $(WEBSERVMODULES))
+WEBSERVCMX = $(addsuffix .cmx, $(WEBSERVMODULES))
+
+$(WEBSERVDEP): DEPFLAGS += -I src/ide
+$(WEBSERVCMO) $(WEBSERVCMX): INCLUDES += -I src/ide
+
+# build targets
+
+byte: bin/why3webserver.byte
+opt:  bin/why3webserver.opt
+
+bin/why3webserver.opt: lib/why3/why3.cmxa $(WEBSERVCMX)
+	$(SHOW) 'Linking  $@'
+	$(HIDE)$(OCAMLOPT) $(OFLAGS) -o $@ $(OLINKFLAGS) $^
+
+bin/why3webserver.byte: lib/why3/why3.cma $(WEBSERVCMO)
+	$(SHOW) 'Linking  $@'
+	$(HIDE)$(OCAMLC) $(BFLAGS) -o $@ $(BLINKFLAGS) -custom $^
+
+# depend and clean targets
+
+ifneq "$(MAKECMDGOALS:clean%=clean)" "clean"
+-include $(WEBSERVDEP)
+endif
+
+depend: $(WEBSERVDEP)
+
+CLEANDIRS += src/ide
+
+clean_old_install::
+	rm -f $(BINDIR)/why3webserver$(EXE)
+
+install_no_local::
+	$(INSTALL) bin/why3webserver.@OCAMLBEST@ $(TOOLDIR)/why3webserver$(EXE)
+
+install_local:: bin/why3webserver
+
+
 ###############
 # Session
 ###############
@@ -896,6 +956,50 @@ install_no_local::
 	$(INSTALL) bin/why3session.@OCAMLBEST@ $(TOOLDIR)/why3session$(EXE)
 
 install_local:: bin/why3session
+
+###############
+# Why3 Shell
+###############
+
+SHELL_FILES = unix_scheduler why3shell
+
+SHELLMODULES = $(addprefix src/tools/, $(SHELL_FILES))
+
+SHELLDEP = $(addsuffix .dep, $(SHELLMODULES))
+SHELLCMO = $(addsuffix .cmo, $(SHELLMODULES))
+SHELLCMX = $(addsuffix .cmx, $(SHELLMODULES))
+
+$(SHELLDEP): DEPFLAGS += -I src/tools
+$(SHELLCMO) $(SHELLCMX): INCLUDES += -I src/tools
+
+# build targets
+
+byte: bin/why3shell.byte
+opt:  bin/why3shell.opt
+
+bin/why3shell.opt: lib/why3/why3.cmxa $(SHELLCMX)
+	$(SHOW) 'Linking  $@'
+	$(HIDE)$(OCAMLOPT) $(OFLAGS) -o $@ $(OLINKFLAGS) $^
+
+bin/why3shell.byte: lib/why3/why3.cma $(SHELLCMO)
+	$(SHOW) 'Linking  $@'
+	$(HIDE)$(OCAMLC) $(BFLAGS) -o $@ $(BLINKFLAGS) $^
+
+# depend and clean targets
+
+ifneq "$(MAKECMDGOALS:clean%=clean)" "clean"
+-include $(SHELLDEP)
+endif
+
+depend: $(SHELLDEP)
+
+clean_old_install::
+	rm -f $(BINDIR)/why3shell$(EXE)
+
+install_no_local::
+	$(INSTALL) bin/why3shell.@OCAMLBEST@ $(TOOLDIR)/why3shell$(EXE)
+
+install_local:: bin/why3shell
 
 
 ##############
@@ -987,7 +1091,7 @@ ifeq (@enable_coq_support@,yes)
 ifeq (@enable_coq_libs@,yes)
 
 
-COQVERSIONSPECIFIC=bv/BV_Gen.v
+COQVERSIONSPECIFIC=
 
 COQVERSIONSPECIFICTARGETS=$(addprefix lib/coq/, $(COQVERSIONSPECIFIC))
 COQVERSIONSPECIFICSOURCES=$(addsuffix .@coq_compat_version@, $(COQVERSIONSPECIFICTARGETS))
@@ -1033,7 +1137,11 @@ COQLIBS_OPTION = $(addprefix lib/coq/option/, $(COQLIBS_OPTION_FILES))
 COQLIBS_SEQ_FILES = Seq
 COQLIBS_SEQ = $(addprefix lib/coq/seq/, $(COQLIBS_SEQ_FILES))
 
+ifeq (@coq_compat_version@,COQ84)
+COQLIBS_BV_FILES = Pow2int
+else
 COQLIBS_BV_FILES = Pow2int BV_Gen
+endif
 COQLIBS_BV = $(addprefix lib/coq/bv/, $(COQLIBS_BV_FILES))
 
 COQLIBS_SPARK_FILES = SPARK_Integer_Arithmetic SPARK_Raising_Order
@@ -1379,48 +1487,57 @@ update-isabelle: $(ISABELLELIBS_INT) $(ISABELLELIBS_BOOL) $(ISABELLELIBS_REAL) $
 
 $(ISABELLELIBS_INT): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/int.why
-	mkdir -p lib/isabelle/int
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T int.$(notdir $(basename $@)) -o lib/isabelle/int/
+	$(SHOW) "Generating Isabelle realization for int.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/int
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T int.$(notdir $(basename $@)) -o lib/isabelle/int/
 
 $(ISABELLELIBS_BOOL): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/bool.why
-	mkdir -p lib/isabelle/bool
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T bool.$(notdir $(basename $@)) -o lib/isabelle/bool/
+	$(SHOW) "Generating Isabelle realization for bool.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/bool
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T bool.$(notdir $(basename $@)) -o lib/isabelle/bool/
 
 $(ISABELLELIBS_REAL): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/real.why
-	mkdir -p lib/isabelle/real
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T real.$(notdir $(basename $@)) -o lib/isabelle/real/
+	$(SHOW) "Generating Isabelle realization for real.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/real
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T real.$(notdir $(basename $@)) -o lib/isabelle/real/
 
 $(ISABELLELIBS_NUMBER): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/number.why
-	mkdir -p lib/isabelle/number
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T number.$(notdir $(basename $@)) -o lib/isabelle/number/
+	$(SHOW) "Generating Isabelle realization for number.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/number
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T number.$(notdir $(basename $@)) -o lib/isabelle/number/
 
 $(ISABELLELIBS_SET): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/set.why
-	mkdir -p lib/isabelle/set
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T set.$(notdir $(basename $@)) -o lib/isabelle/set/
+	$(SHOW) "Generating Isabelle realization for set.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/set
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T set.$(notdir $(basename $@)) -o lib/isabelle/set/
 
 $(ISABELLELIBS_MAP): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/map.why
-	mkdir -p lib/isabelle/map
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T map.$(notdir $(basename $@)) -o lib/isabelle/map/
+	$(SHOW) "Generating Isabelle realization for map.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/map
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T map.$(notdir $(basename $@)) -o lib/isabelle/map/
 
 $(ISABELLELIBS_LIST): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/list.why
-	mkdir -p lib/isabelle/list
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T list.$(notdir $(basename $@)) -o lib/isabelle/list/
+	$(SHOW) "Generating Isabelle realization for list.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/list
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T list.$(notdir $(basename $@)) -o lib/isabelle/list/
 
 $(ISABELLELIBS_OPTION): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/option.why
-	mkdir -p lib/isabelle/option
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T option.$(notdir $(basename $@)) -o lib/isabelle/option/
+	$(SHOW) "Generating Isabelle realization for option.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/option
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T option.$(notdir $(basename $@)) -o lib/isabelle/option/
 
 $(ISABELLELIBS_BV): bin/why3realize.@OCAMLBEST@ drivers/isabelle-realizations.aux \
   $(ISABELLEREALIZEDRV) drivers/isabelle-common.gen theories/bv.why
-	mkdir -p lib/isabelle/bv
-	WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T bv.$(notdir $(basename $@)) -o lib/isabelle/bv/
+	$(SHOW) "Generating Isabelle realization for bv.$(notdir $(basename $@))"
+	$(HIDE)mkdir -p lib/isabelle/bv
+	$(HIDE)WHY3CONFIG="" bin/why3realize.@OCAMLBEST@ -L theories -D $(ISABELLEREALIZEDRV) -T bv.$(notdir $(basename $@)) -o lib/isabelle/bv/
 
 # do not update isabelle realizations systematically
 # all: update-isabelle
@@ -1586,7 +1703,7 @@ endif
 
 ALTERGODIR=src/trywhy3/alt-ergo
 
-JSOCAMLC=ocamlfind ocamlc -package js_of_ocaml -g -package js_of_ocaml.syntax \
+JSOCAMLC=ocamlfind ocamlc -package js_of_ocaml -package js_of_ocaml.syntax \
         -syntax camlp4o -I src/trywhy3 \
 	-I $(ALTERGODIR)/src/util \
 	-I $(ALTERGODIR)/src/structures \
@@ -1643,7 +1760,6 @@ src/trywhy3/trywhy3.js: src/trywhy3/trywhy3.byte src/trywhy3/why3_worker.js src/
 src/trywhy3/trywhy3.byte: src/trywhy3/worker_proto.cmo src/trywhy3/trywhy3.cmo
 	$(JSOCAMLC) $(BFLAGS) -o $@ -linkpkg $(BLINKFLAGS) $^
 
-
 src/trywhy3/why3_worker.js: src/trywhy3/why3_worker.byte
 	js_of_ocaml $(JSOO_DEBUG) --extern-fs -I . -I src/trywhy3 --file=trywhy3.conf:/ \
 		--file=try_alt_ergo.drv:/ \
@@ -1652,7 +1768,6 @@ src/trywhy3/why3_worker.js: src/trywhy3/why3_worker.byte
 
 src/trywhy3/why3_worker.byte: $(TRYWHY3CMO) src/trywhy3/worker_proto.cmo src/trywhy3/why3_worker.cmo
 	$(JSOCAMLC) $(BFLAGS) -o $@ -linkpkg $(BLINKFLAGS) $^
-
 
 src/trywhy3/alt_ergo_worker.js: src/trywhy3/alt_ergo_worker.byte
 	js_of_ocaml $(JSOO_DEBUG) +weak.js +nat.js +dynlink.js +toplevel.js $<
@@ -1678,6 +1793,30 @@ clean::
 
 CLEANDIRS += src/trywhy3
 
+
+#########
+# why3webserver and full web/js interface
+#########
+
+ifeq (@HASJSOFOCAML,yes)
+
+JSOCAMLCW=ocamlfind ocamlc -package js_of_ocaml -package js_of_ocaml.ppx \
+        -I src/ide
+
+src/ide/why3_js.cmo: src/ide/why3_js.ml lib/why3/why3.cma
+	$(JSOCAMLCW) $(BFLAGS) -c $<
+
+src/ide/why3_js.byte: lib/why3/why3.cma src/ide/why3_js.cmo
+	$(JSOCAMLCW) $(BFLAGS) -o $@ -linkpkg $(BLINKFLAGS) $^
+
+src/ide/why3_js.js: src/ide/why3_js.byte
+	js_of_ocaml +weak.js +nat.js +dynlink.js +toplevel.js $<
+
+opt: lib/why3/why3.cma bin/why3webserver.opt src/ide/why3_js.js
+byte: lib/why3/why3.cma bin/why3webserver.byte src/ide/why3_js.js
+
+endif
+
 ########
 # bench
 ########
@@ -1702,6 +1841,10 @@ bench:: bin/why3.@OCAMLBEST@ bin/why3config.@OCAMLBEST@ plugins $(TOOLS) \
 ###############
 # test targets
 ###############
+
+test-itp.opt: src/printer/itp.ml lib/why3/why3.cmxa
+	$(if $(QUIET),@echo 'Ocamlopt $<' &&) \
+	$(OCAMLOPT) -o $@ -I lib/why3 $(INCLUDES) $(EXTCMXA) lib/why3/why3.cmxa $<
 
 test-api-logic.byte: examples/use_api/logic.ml lib/why3/why3.cma
 	$(SHOW) 'Ocaml    $<'
@@ -1938,6 +2081,7 @@ STDLIBS = algebra \
 	floating_point \
 	graph \
 	int \
+	ieee_float \
 	list \
 	map \
 	number \

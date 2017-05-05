@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -242,6 +242,9 @@ rule token = parse
       { raise (IllegalCharacter c) }
 
 {
+
+  let parse_term lb = Parser.term_eof token lb
+
   let parse_logic_file env path lb =
     open_file token (Lexing.from_string "") (Typing.open_file env path);
     Loc.with_location (logic_file token) lb;
@@ -258,4 +261,5 @@ rule token = parse
 
   let () = Env.register_format Env.base_language "why" ["why"] read_channel
     ~desc:"WhyML@ logical@ language"
+
 }

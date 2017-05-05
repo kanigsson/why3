@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -67,67 +67,67 @@ let array_add_element ~array ~index ~value =
     arr_indices = arr_index::array.arr_indices;
   }
 
-let rec convert_model_value value : Json.json =
+let rec convert_model_value value : Json_base.json =
   match value with
   | Integer s ->
-      let m = Mstr.add "type" (Json.String "Integer") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.String s) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Integer") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.String s) m in
+      Json_base.Record m
   | Decimal (int_part, fract_part) ->
-      let m = Mstr.add "type" (Json.String "Float") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.String (int_part^"."^fract_part)) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Float") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.String (int_part^"."^fract_part)) m in
+      Json_base.Record m
   | Unparsed s ->
-      let m = Mstr.add "type" (Json.String "Unparsed") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.String s) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Unparsed") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.String s) m in
+      Json_base.Record m
   | Bitvector v ->
-      let m = Mstr.add "type" (Json.String "Bv") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.String v) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Bv") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.String v) m in
+      Json_base.Record m
   | Boolean b ->
-      let m = Mstr.add "type" (Json.String "Boolean") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.Bool b) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Boolean") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.Bool b) m in
+      Json_base.Record m
   | Array a ->
       let l = convert_array a in
-      let m = Mstr.add "type" (Json.String "Array") Stdlib.Mstr.empty in
-      let m = Mstr.add "val" (Json.List l) m in
-      Json.Record m
+      let m = Mstr.add "type" (Json_base.String "Array") Stdlib.Mstr.empty in
+      let m = Mstr.add "val" (Json_base.List l) m in
+      Json_base.Record m
   | Record r ->
       convert_record r
 
 and convert_array a =
   let m_others =
     Mstr.add "others" (convert_model_value a.arr_others)  Stdlib.Mstr.empty in
-  convert_indices a.arr_indices @ [Json.Record m_others]
+  convert_indices a.arr_indices @ [Json_base.Record m_others]
 
 and convert_indices indices =
   match indices with
   | [] -> []
   | index :: tail ->
-    let m = Mstr.add "indice" (Json.String index.arr_index_key) Stdlib.Mstr.empty in
+    let m = Mstr.add "indice" (Json_base.String index.arr_index_key) Stdlib.Mstr.empty in
     let m = Mstr.add "value" (convert_model_value index.arr_index_value) m in
-    Json.Record m :: convert_indices tail
+    Json_base.Record m :: convert_indices tail
 
 and convert_record r =
-  let m = Mstr.add "type" (Json.String "Record") Stdlib.Mstr.empty in
+  let m = Mstr.add "type" (Json_base.String "Record") Stdlib.Mstr.empty in
   let fields = convert_fields r.fields in
   let discrs = convert_discrs r.discrs in
   let m_field_discr = Mstr.add "Field" fields Stdlib.Mstr.empty in
   let m_field_discr = Mstr.add "Discr" discrs m_field_discr in
-  let m = Mstr.add "val" (Json.Record m_field_discr) m in
-  Json.Record m
+  let m = Mstr.add "val" (Json_base.Record m_field_discr) m in
+  Json_base.Record m
 
 and convert_fields fields =
-  Json.List (List.map convert_model_value fields)
+  Json_base.List (List.map convert_model_value fields)
 
 and convert_discrs discrs =
-  Json.List (List.map convert_model_value discrs)
+  Json_base.List (List.map convert_model_value discrs)
 
 let print_model_value_sanit fmt v =
   let v = convert_model_value v in
-  Json.print_json fmt v
+  Json_base.print_json fmt v
 
 let print_model_value = print_model_value_sanit
 
@@ -365,15 +365,15 @@ let print_model_element_json me_name_to_str fmt me =
     fprintf fmt "%a" print_model_value_sanit me.me_value in
   let print_kind fmt =
     match me.me_name.men_kind with
-    | Result -> fprintf fmt "%a" Json.string "result"
-    | Old -> fprintf fmt "%a" Json.string "old"
-    | Error_message -> fprintf fmt "%a" Json.string "error_message"
-    | Other -> fprintf fmt "%a" Json.string "other" in
+    | Result -> fprintf fmt "%a" Json_base.string "result"
+    | Old -> fprintf fmt "%a" Json_base.string "old"
+    | Error_message -> fprintf fmt "%a" Json_base.string "error_message"
+    | Other -> fprintf fmt "%a" Json_base.string "other" in
   let print_name fmt =
-    Json.string fmt (me_name_to_str me) in
+    Json_base.string fmt (me_name_to_str me) in
   let print_value_or_kind_or_name fmt printer =
     printer fmt in
-  Json.map_bindings
+  Json_base.map_bindings
     (fun s -> s)
     print_value_or_kind_or_name
     fmt
@@ -382,14 +382,14 @@ let print_model_element_json me_name_to_str fmt me =
      ("kind", print_kind)]
 
 let print_model_elements_json me_name_to_str fmt model_elements =
-  Json.list
+  Json_base.list
     (print_model_element_json me_name_to_str)
     fmt
     model_elements
 
 let print_model_elements_on_lines_json model me_name_to_str vc_line_trans fmt
     (file_name, model_file) =
-  Json.map_bindings
+  Json_base.map_bindings
     (fun i ->
       match model.vc_term_loc with
       | None ->
@@ -417,7 +417,7 @@ let print_model_json
       List.append bindings [(file_name, (file_name, model_file))])
     []
     (StringMap.bindings model.model_files) in
-  Json.map_bindings
+  Json_base.map_bindings
     (fun s -> s)
     (print_model_elements_on_lines_json model me_name_to_str vc_line_trans)
     fmt

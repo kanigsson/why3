@@ -60,7 +60,9 @@ let run_goal ~cntexample ?limit prover g =
       ~cntexample ~ce_prover ~limit ?old ~inplace driver (Session.goal_task g) in
   let entry = { goal = g; prover = prover; cntexample = cntexample } in
   state.num <- state.num + 1;
-  Intmap.add state.map id entry
+  match id with
+  | Why3.Call_provers.ServerCall id -> Intmap.add state.map id entry
+  | _ -> failwith "Not a ServerCall"
 
 let handle_finished_call callback entry res =
   (* On a pair of the type post_prover_call * goal, register the proof result

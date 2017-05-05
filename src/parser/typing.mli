@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -51,7 +51,11 @@ val find_qualid :
 
 type global_vs = Ptree.qualid -> vsymbol option
 
+val type_term_in_namespace : namespace -> Decl.known_map -> global_vs -> Ptree.term -> term
+
 val type_term : theory_uc -> global_vs -> Ptree.term -> term
+
+val type_fmla_in_namespace : namespace -> Decl.known_map -> global_vs -> Ptree.term -> term
 
 val type_fmla : theory_uc -> global_vs -> Ptree.term -> term
 

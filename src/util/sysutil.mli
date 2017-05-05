@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -32,6 +32,9 @@ val file_contents_buf : string -> Buffer.t
 
 (* put the content of a file in a formatter *)
 val file_contents_fmt : string -> Format.formatter -> unit
+
+(* [write_file f c] writes the content [c] into the file [f] *)
+val write_file : string -> string -> unit
 
 val open_temp_file :
   ?debug:bool -> (* don't remove the file *)

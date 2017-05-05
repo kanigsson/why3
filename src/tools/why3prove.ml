@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -151,9 +151,11 @@ let option_list = [
 let config, _, env =
   Whyconf.Args.initialize option_list add_opt_file usage_msg
 
+let main = Whyconf.get_main config
+
 let driver_file s =
   if Sys.file_exists s || String.contains s '/' || String.contains s '.' then s
-  else Filename.concat Config.datadir (Filename.concat "drivers" (s ^ ".drv"))
+  else Filename.concat (Whyconf.datadir main) (Filename.concat "drivers" (s ^ ".drv"))
 
 let opt_driver = ref (match List.rev_map driver_file !opt_driver with
   | f::ef -> Some (f, ef)
@@ -242,6 +244,7 @@ let output_task drv fname _tname th task dir =
   let name = Ident.string_unique !fname_printer (String.sub dest 0 i) in
   let ext = String.sub dest i (String.length dest - i) in
   let cout = open_out (Filename.concat dir (name ^ ext)) in
+  (* Name tables not necessary outside of ITP *)
   Driver.print_task drv (formatter_of_out_channel cout) task;
   close_out cout
 
@@ -257,6 +260,7 @@ let output_task_prepared drv fname _tname th task dir =
   let ext = String.sub dest i (String.length dest - i) in
   let cout = open_out (Filename.concat dir (name ^ ext)) in
   (* TODO print the counterexample *)
+  (* Name tables not necessary outside ITP *)
   let _counterexample = Driver.print_task_prepared drv (formatter_of_out_channel cout) task in
   close_out cout
 
@@ -273,6 +277,7 @@ let output_theory drv fname _tname th task dir =
       Some (open_in backup)
     end else None in
   let cout = open_out file in
+  (* Name table is not necessary outside ITP *)
   Driver.print_task ?old drv (formatter_of_out_channel cout) task;
   close_out cout
 
@@ -283,13 +288,15 @@ let do_task drv fname tname (th : Theory.theory) (task : Task.task) =
                    limit_mem = memlimit } in
   match !opt_output, !opt_command with
     | None, Some command ->
+        (* Name tables not necessary outside ITP *)
         let call =
           Driver.prove_task ~command ~limit ~cntexample:!opt_cntexmp drv task in
-        let res = Call_provers.wait_on_call (Call_provers.ServerCall call) in
+        let res = Call_provers.wait_on_call call in
         printf "%s %s %s : %a@." fname tname
           (task_goal task).Decl.pr_name.Ident.id_string
           Call_provers.print_prover_result res
     | None, None ->
+        (* Name tables not necessary outside ITP *)
         Driver.print_task ~cntexample:!opt_cntexmp drv std_formatter task
     | Some dir, _ -> output_task drv fname tname th task dir
 

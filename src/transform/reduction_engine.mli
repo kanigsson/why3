@@ -1,7 +1,7 @@
 (********************************************************************)
 (*                                                                  *)
 (*  The Why3 Verification Platform   /   The Why3 Development Team  *)
-(*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
 (*                                                                  *)
 (*  This software is distributed under the terms of the GNU Lesser  *)
 (*  General Public License version 2.1, with the special exception  *)
@@ -113,3 +113,11 @@ val normalize : limit:int -> engine -> Term.term -> Term.term
     When limit is reached, the partially reduced term is returned.
 *)
 
+open Term
+
+exception NoMatch of (term * term) option
+exception NoMatchpat of (pattern * pattern) option
+
+type substitution = term Mvs.t
+
+val first_order_matching: Svs.t -> term list -> term list -> Ty.ty Ty.Mtv.t * substitution

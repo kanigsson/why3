@@ -1,7 +1,7 @@
 /********************************************************************/
 /*                                                                  */
 /*  The Why3 Verification Platform   /   The Why3 Development Team  */
-/*  Copyright 2010-2016   --   INRIA - CNRS - Paris-Sud University  */
+/*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  */
 /*                                                                  */
 /*  This software is distributed under the terms of the GNU Lesser  */
 /*  General Public License version 2.1, with the special exception  */
@@ -70,8 +70,8 @@ prequest parse_request(char* str_req, int len, int key) {
   if (semic == 0) {
     return NULL;
   }
-  //  might be a 'parallel' command
   if (semic == 1) {
+    //  might be a 'parallel' or a 'interrupt' command
     pos = copy_up_to_semicolon (str_req, pos, len, &tmp);
     if (strncmp(tmp, "parallel", pos) == 0) {
       free(tmp);
@@ -80,6 +80,14 @@ prequest parse_request(char* str_req, int len, int key) {
       if (parallel_arg >= 1) {
         parallel = parallel_arg;
       }
+    }
+    if (strncmp(tmp, "interrupt", pos) == 0) {
+      free(tmp);
+      req = (prequest) malloc(sizeof(request));
+      req->key = key;
+      req->req_type = REQ_INTERRUPT;
+      pos = copy_up_to_semicolon(str_req, pos, len, &(req->id));
+      return req;
     }
     free(tmp);
     return NULL;
@@ -101,6 +109,7 @@ prequest parse_request(char* str_req, int len, int key) {
   free(tmp);
   req = (prequest) malloc(sizeof(request));
   req->key = key;
+  req->req_type = REQ_RUN;
   req->numargs = numargs;
   req->usestdin = runstdin;
   pos = copy_up_to_semicolon(str_req, pos, len, &(req->id));
