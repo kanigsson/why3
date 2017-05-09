@@ -40,7 +40,7 @@ let print_json_field key value_pr fmt value =
   fprintf fmt "%a:%a" string key value_pr value
 
 let list pr fmt l =
-  if l = [] then fprintf fmt "[null]"
+  if l = [] then fprintf fmt "[]"
   else
     Pp.print_list_delim ~start:Pp.lsquare ~stop:Pp.rsquare ~sep:Pp.comma
       pr fmt l
