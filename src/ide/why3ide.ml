@@ -118,18 +118,20 @@ let send_request r =
 let backtrace_and_exit f () =
   try f () with
   | e ->
-      if Debug.test_flag debug_stack_trace then
-        begin
-          Printexc.print_backtrace stdout;
-          exit 1
-        end
-      else
-        begin
-          Format.eprintf "Following exception %a was catched by Labelgtk."
-            Exn_printer.exn_printer e;
-          Format.eprintf "This should not happen. Please report. @.";
-          raise e
-        end
+     if Debug.test_flag debug_stack_trace then
+       begin
+         Printexc.print_backtrace stderr;
+         Format.eprintf "exception '%a' was raised in a LablGtk callback.@."
+                        Exn_printer.exn_printer e;
+         exit 1
+       end
+     else
+       begin
+         Format.eprintf "exception '%a' was raised in a LablGtk callback.@."
+                        Exn_printer.exn_printer e;
+         Format.eprintf "This should not happen. Please report. @.";
+         raise e
+       end
 
 module S = struct
 
@@ -306,6 +308,11 @@ let source_view_table : (int * GSourceView2.source_view * bool ref * GMisc.label
 
 (* The corresponding file does not have a source view *)
 exception Nosourceview of string
+
+let get_source_view_table (file:string) =
+  match Hstr.find source_view_table file with
+  | v -> v
+  | exception Not_found -> raise (Nosourceview file)
 
 (* This returns the source_view of a file *)
 let get_source_view (file: string) : GSourceView2.source_view =
@@ -624,9 +631,9 @@ let goals_model,goals_view =
   let () = view#set_rules_hint true in
 *)
   let () = view#set_enable_search false in
-  ignore (view#append_column view_name_column);
-  ignore (view#append_column view_status_column);
-  ignore (view#append_column view_time_column);
+  let _: int = view#append_column view_name_column in
+  let _: int = view#append_column view_status_column in
+  let _: int = view#append_column view_time_column in
   Debug.dprintf debug "[GTK IDE] done@.";
   model,view
 
@@ -974,12 +981,30 @@ let convert_color (color: color): string =
   | Premise_color -> "premise_tag"
   | Goal_color -> "goal_tag"
 
+let move_to_line ~yalign (v : GSourceView2.source_view) line =
+  let line = max 0 line in
+  let line = min line v#buffer#line_count in
+  let it = v#buffer#get_iter (`LINE line) in
+  v#buffer#place_cursor ~where:it;
+  let mark = `MARK (v#buffer#create_mark it) in
+  v#scroll_to_mark ~use_align:true ~yalign mark
+
+(* TODO Do we want an option to choose if we aggressivily switch to the correct
+   source location each time we receive locations with task or not *)
+let always_scroll = false
+
 (* Add a color tag on the right locations on the correct file.
    If the file was not open yet, nothing is done *)
 let color_loc ~color loc =
   let f, l, b, e = Loc.get loc in
   try
-    let v: GSourceView2.source_view = get_source_view f in
+    let (n, v, _, _) = get_source_view_table f in
+    if color = Goal_color then
+      begin
+        if always_scroll then
+          notebook#goto_page n;
+        move_to_line ~yalign:0.0 v l;
+      end;
     let color = convert_color color in
     color_loc ~color v l b e
   with
@@ -1006,8 +1031,7 @@ let image_of_pa_status ~obsolete pa =
   | Controller_itp.Scheduled -> !image_scheduled
   | Controller_itp.Running -> !image_running
   | Controller_itp.InternalFailure _e -> !image_failure
-  | Controller_itp.Uninstalled _p -> !image_failure (* TODO !image_uninstalled *)
-(*  | None -> !image_undone*)
+  | Controller_itp.Uninstalled _p -> !image_undone (* TODO !image_uninstalled *)
   | Controller_itp.Done r ->
     let pr_answer = r.Call_provers.pr_answer in
     begin
@@ -1162,6 +1186,7 @@ let rec update_status_column_from_iter cont iter =
   | Some p -> update_status_column_from_iter cont p
   | None -> ()
 
+(* TODO Unused functions. Map these to a key or remove it *)
 let move_current_row_selection_up () =
   let current_view = List.hd (goals_view#selection#get_selected_rows) in
   ignore (GTree.Path.up current_view);
@@ -1213,18 +1238,34 @@ let on_selected_row r =
   with
     | Not_found -> task_view#source_buffer#set_text ""
 
+let has_right_click = ref false
+
 let (_ : GtkSignal.id) =
   goals_view#selection#connect#after#changed ~callback:
     (fun () ->
      begin
        match get_selected_row_references () with
-       | [r] -> on_selected_row r
+       | [r] -> on_selected_row r;
+           if !has_right_click then
+             (* TODO here show the menu *)
+             ();
+           has_right_click := false
+
        | _ -> ()
      end (* ;
-     command_entry#misc#grab_focus () *))
+     command_entry#misc#grab_focus () *) ; has_right_click := false)
 
-
-
+let _ =
+  (* This event is executed BEFORE the other connected event goals_view#selection#connect#after#changed above *)
+  (* We return false so that the second callback above is executed ? *)
+  goals_view#event#connect#button_press ~callback:(fun x ->
+    (match GdkEvent.Button.button x with
+    | 1 -> (* Left click *) ()
+    | 2 -> (* Middle click *) ()
+    | 3 -> (* Right click *)
+        has_right_click := true
+    | _ -> (* Error case TODO *) assert false);
+    Format.eprintf "TODO button number %d was clicked on the tree view@." (GdkEvent.Button.button x); false)
 
 
 (***********************)
@@ -1451,6 +1492,10 @@ let treat_notification n =
   | Next_Unproven_Node_Id (asked_id, next_unproved_id) ->
       if_selected_alone asked_id
           (fun _ ->
+            (* Unselect the potentially selected goal to avoid having two tasks
+               selected at once when a prover successfully end. To continue the
+               proof, it is better to only have the new goal selected *)
+            goals_view#selection#unselect_all ();
             let iter = (get_node_row next_unproved_id)#iter in
             goals_view#selection#select_iter iter)
   | New_node (id, parent_id, typ, name, detached) ->
