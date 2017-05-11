@@ -72,28 +72,45 @@ let init_proof_state () = {
 type controller =
   { mutable controller_session: Session_itp.session;
     proof_state: proof_state;
+    controller_config : Whyconf.config;
     controller_env: Env.env;
     controller_provers:
       (Whyconf.config_prover * Driver.driver) Whyconf.Hprover.t;
   }
 
+(*
 let clear_proof_state c =
   Stdlib.Hstr.clear c.proof_state.file_state;
   Hid.clear c.proof_state.th_state;
   Htn.clear c.proof_state.tn_state;
   Hpn.clear c.proof_state.pn_state
+*)
 
-let create_controller env =
-  {
-    controller_session = Session_itp.dummy_session;
-    proof_state = init_proof_state ();
-    controller_env = env;
-    controller_provers = Whyconf.Hprover.create 7;
-  }
+let create_controller config env ses =
+  let c =
+    {
+      controller_session = ses;
+      proof_state = init_proof_state ();
+      controller_config = config;
+      controller_env = env;
+      controller_provers = Whyconf.Hprover.create 7;
+    }
+  in
+  let provers = Whyconf.get_provers config in
+  Whyconf.Mprover.iter
+    (fun _ p ->
+     try
+       let d = Driver.load_driver env p.Whyconf.driver [] in
+       Whyconf.Hprover.add c.controller_provers p.Whyconf.prover (p,d)
+     with e ->
+       Format.eprintf
+         "[Controller_itp] error while loading driver for prover %a: %a@."
+         Whyconf.print_prover p.Whyconf.prover
+         Exn_printer.exn_printer e)
+    provers;
+  c
 
-let init_controller s c =
-  clear_proof_state (c);
-  c.controller_session <- s
+let set_session cont ses = cont.controller_session <- ses
 
 let tn_proved c tid = Htn.find_def c.proof_state.tn_state false tid
 let pn_proved c pid = Hpn.find_def c.proof_state.pn_state false pid
@@ -372,8 +389,7 @@ let merge_file (old_ses : session) (c : controller) ~use_shapes _ file =
   in
   merge_file_section
     c.controller_session ~use_shapes ~old_ses ~old_theories
-    ~env:c.controller_env file_name new_theories format;
-  reload_session_proof_state c
+    ~env:c.controller_env file_name new_theories format
 
 let reload_files (c : controller) ~use_shapes =
   let old_ses = c.controller_session in
@@ -382,7 +398,8 @@ let reload_files (c : controller) ~use_shapes =
   try
     Stdlib.Hstr.iter
       (fun f -> merge_file old_ses c ~use_shapes f)
-      (get_files old_ses)
+      (get_files old_ses);
+    reload_session_proof_state c
   with e ->
     c.controller_session <- old_ses;
     raise e
