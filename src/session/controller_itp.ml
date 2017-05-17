@@ -110,8 +110,6 @@ let create_controller config env ses =
     provers;
   c
 
-let set_session cont ses = cont.controller_session <- ses
-
 let tn_proved c tid = Htn.find_def c.proof_state.tn_state false tid
 let pn_proved c pid = Hpn.find_def c.proof_state.pn_state false pid
 let th_proved c th  =
@@ -406,7 +404,7 @@ let reload_files (c : controller) ~use_shapes =
 
 let add_file c ?format fname =
   let theories = read_file c.controller_env ?format fname in
-  add_file_section ~use_shapes:false c.controller_session fname theories format
+  add_file_section c.controller_session fname theories format
 
 (* Update the proof_state according to new false state and then remove
    the subtree *)
