@@ -283,6 +283,23 @@ let compute_base_provers config str_list =
     Gnat_util.abort_with_message ~internal:false
       "Several provers match the selection."
 
+(* this function loads the driver for a given prover *)
+(* TODO keep it removed ?
+
+let prover_driver env base_prover =
+  try
+    Driver.load_driver env base_prover.Whyconf.driver base_prover.Whyconf.extra_drivers
+    (* TODO this removed but maybe should not
+    let driver_file = find_driver_file base_prover.Whyconf.driver in
+    Driver.load_driver env driver_file base_prover.Whyconf.extra_drivers
+    *)
+  with e ->
+    let s =
+      Pp.sprintf "Failed to load driver for prover: %a"
+        Exn_printer.exn_printer e in
+    Gnat_util.abort_with_message ~internal:true s
+*)
+
 (* Depending on what kinds of provers are requested, environment loading is a
  * bit different, hence we do this all together here *)
 
@@ -297,6 +314,13 @@ let provers, prover_ce, config, env =
      try
        let gnatprove_config =
          Whyconf.read_config (Some (gnatprove_why3conf_file ())) in
+       (* we slightly change the config so that drivers files are referenced
+          with the right prefix. *)
+       let gnatprove_config =
+         let transform_driver (base_prover: Whyconf.config_prover) =
+           {base_prover with Whyconf.driver = find_driver_file base_prover.Whyconf.driver} in
+         Whyconf.set_provers gnatprove_config
+           (Whyconf.Mprover.map transform_driver (Whyconf.get_provers gnatprove_config)) in
        if not !opt_replay && builtin_provers_only then gnatprove_config
         else begin
            let conf = (Whyconf.read_config !opt_why3_conf_file) in
@@ -317,12 +341,13 @@ let provers, prover_ce, config, env =
        Gnat_util.abort_with_message ~internal:true
          (Format.sprintf "cannot read file %s: %s" f s)
   in
+
   (* now we build the Whyconf.config_prover for all requested provers
    * and for the prover for counterexample generation *)
   let base_provers, base_prover_ce =
     compute_base_provers config prover_str_list in
   let env =
-    let config_main = Whyconf.get_main (config) in
+    let config_main = Whyconf.get_main config in
     (* load plugins; may be needed for external provers *)
     if not builtin_provers_only then
       Whyconf.load_plugins config_main;
@@ -333,26 +358,11 @@ let provers, prover_ce, config, env =
       | None -> base_loadpath
     in
     Env.create_env extended_loadpath  in
-  (* this function loads the driver for a given prover *)
-  let prover_driver base_prover =
-    try
-      let driver_file = find_driver_file base_prover.Whyconf.driver in
-      Driver.load_driver env driver_file base_prover.Whyconf.extra_drivers
-    with e ->
-      let s =
-        Pp.sprintf "Failed to load driver for prover: %a"
-             Exn_printer.exn_printer e in
-      Gnat_util.abort_with_message ~internal:true s in
-  (* now we build the prover record for each requested prover *)
-  let build_prover_rec base_prover =
-    { Session.prover_driver = prover_driver  base_prover;
-      prover_config = base_prover} in
   let provers =
-    List.map build_prover_rec base_provers in
-  let prover_ce = match base_prover_ce with
-    | Some base_prover_ce ->
-      Some (build_prover_rec base_prover_ce)
-    | None -> None in
+    List.map (fun x -> x.Whyconf.prover) base_provers in
+  let prover_ce =
+    Opt.map (fun conf_prover -> conf_prover.Whyconf.prover) base_prover_ce
+  in
   provers, prover_ce, config, env
 
 (* The function replaces %{f,t,T,m,l,d} to their corresponding values
@@ -392,8 +402,8 @@ let list_and_filter dir =
   with
   | Sys_error _ -> []
 
-let build_shared proof_dir prover =
-  let prover_name = prover.Whyconf.prover.Whyconf.prover_name in
+let build_shared proof_dir (prover: Whyconf.prover) =
+  let prover_name = prover.Whyconf.prover_name in
   let shared_dir = Filename.concat proof_dir prover_name in
   let vc_files = list_and_filter shared_dir in
   let (unused, child_out) = Unix.pipe () in
@@ -438,14 +448,16 @@ let build_shared proof_dir prover =
     let file_update = update vc_files in
     let old_dir = Sys.getcwd () in
     Sys.chdir prover_dir;
-    if file_update && prover.Whyconf.configure_build <> "" then
-      check_success (exec_cmd prover.Whyconf.configure_build)
+    let config_prover = Whyconf.get_prover_config config prover in
+    let configure_build = config_prover.Whyconf.configure_build in
+    if file_update && configure_build <> "" then
+      check_success (exec_cmd configure_build)
         "Problem during build configuration for prover shared files";
     List.iter (fun cmd ->
                if cmd <> "" then
                  check_success (exec_cmd cmd)
                                "Problem during build of prover shared files")
-              prover.Whyconf.build_commands;
+              config_prover.Whyconf.build_commands;
     Sys.chdir old_dir;
     Unix.close unused;
     Unix.close child_out
@@ -456,11 +468,11 @@ let () =
   match !opt_prepare_shared, !opt_proof_dir with
   | (true, Some pdir) ->
     List.iter (fun prover ->
-      build_shared pdir prover.Session.prover_config) provers;
+      build_shared pdir prover) provers;
 
     let () = match prover_ce with
     | Some prover_ce ->
-      build_shared pdir prover_ce.Session.prover_config;
+      build_shared pdir prover_ce;
     | None -> () in
 
     exit 0
@@ -474,9 +486,14 @@ let manual_prover =
      prover, they must all be automatic. *)
   match provers with
   | [] -> None
-  | [x] when x.Session.prover_config.Whyconf.interactive -> Some x
+  | [x] when
+      let config_prover = Whyconf.get_prover_config config x in
+      config_prover.Whyconf.interactive ->
+        Some x
   | _ :: _ :: _ when
-     List.exists (fun p -> p.Session.prover_config.Whyconf.interactive) provers
+     List.exists (fun p ->
+       let config_prover = Whyconf.get_prover_config config p in
+       config_prover.Whyconf.interactive) provers
      && not !opt_replay
      ->
        Gnat_util.abort_with_message ~internal:false
@@ -500,8 +517,7 @@ let filename =
 
 let limit_time ~prover =
   match prover_ce, !opt_timeout with
-  | Some p, _ when prover =
-    p.Session.prover_config.Whyconf.prover.Whyconf.prover_name &&
+  | Some p, _ when prover = p.Whyconf.prover_name &&
                    !opt_ce_timeout <> None ->
       Opt.get !opt_ce_timeout
   | _, None -> Call_provers.empty_limit.Call_provers.limit_time
@@ -601,7 +617,7 @@ let () =
 let is_selected_prover p =
   try
     Some (List.find (fun g ->
-      g.Session.prover_config.Whyconf.prover = p) provers)
+      g = p) provers)
   with Not_found -> None
 
 let replay = !opt_replay
