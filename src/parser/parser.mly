@@ -220,6 +220,7 @@ end
 %start <Ptree.incremental -> unit> open_file
 %start <unit> logic_file program_file
 %start <Ptree.term> term_eof
+%start <Ptree.ident list> ident_comma_list
 %%
 
 (* parsing of a single term *)
@@ -1064,6 +1065,10 @@ any_qualid:
 sident:
 | ident   { $1 }
 | STRING  { mk_id $1 $startpos $endpos }
+
+(* Parsing of a list *)
+ident_comma_list:
+| comma_list1(ident) EOF { $1 }
 
 (* Labels and position markers *)
 

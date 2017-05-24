@@ -1257,6 +1257,8 @@ let (_ : GtkSignal.id) =
        | [r] -> on_selected_row r;
            if !has_right_click then
              (* TODO here show the menu *)
+             tools_menu#popup ~button:1 ~time:0l;
+(*
              GToolbox.popup_menu ~entries:[
                               `I("Mark Obsolete",
                                  (* TODO add a mark_obsolete function *)
@@ -1273,6 +1275,7 @@ let (_ : GtkSignal.id) =
                               `I("Choix 2.3",(fun () -> Format.eprintf "Popup menu: choix 2.3 active@."));
                             ]
                             ~button:1 ~time:0l;
+*)
            has_right_click := false
 
        | _ -> ()
