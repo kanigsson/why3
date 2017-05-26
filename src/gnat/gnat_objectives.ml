@@ -322,7 +322,7 @@ let init_cont () =
   let session_dir = get_session_dir () in
   Queue.add session_dir files;
   let session_dir = Server_utils.get_session_dir ~allow_mkdir:true files in
-  let is_new_session, (session, _use_shapes) =
+  let is_new_session, (session, use_shapes) =
     if not Gnat_config.force && Sys.file_exists session_dir then
       false, Session_itp.load_session session_dir
     else
@@ -333,6 +333,8 @@ let init_cont () =
   end;
   (* Init why3server *)
   init ();
+  (* TODO reload files to get an up to date controller *)
+  Controller_itp.reload_files c ~use_shapes;
   c
 
 let objective_status obj =
