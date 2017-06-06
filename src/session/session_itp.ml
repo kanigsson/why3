@@ -1,3 +1,8 @@
+
+
+
+
+
 open Stdlib
 
 module Hprover = Whyconf.Hprover
@@ -99,8 +104,10 @@ let init_Hpn (s : session) (h: 'a Hpn.t) (d: 'a) : unit =
 let init_Htn (s : session) (h: 'a Htn.t) (d: 'a) : unit =
   Hint.iter (fun k _pn -> Htn.replace h k d) s.trans_table
 
+(*
 let _session_iter_proofNode f s =
   Hint.iter f s.proofNode_table
+*)
 
 let session_iter_proof_attempt f s =
   Hint.iter f s.proofAttempt_table
@@ -147,6 +154,7 @@ let get_theories s =
  *)
 
 let get_files s = s.session_files
+let get_file s name = Hstr.find s.session_files name
 let get_dir s = s.session_dir
 
 let get_shape_version s = s.session_shape_version
@@ -424,19 +432,15 @@ let rec fold_all_sub_goals_of_proofn s f acc pnid =
 let fold_all_sub_goals_of_theory s f acc th =
   List.fold_left (fold_all_sub_goals_of_proofn s f) acc th.theory_goals
 
-(*
 let theory_iter_proofn s f th =
   fold_all_sub_goals_of_theory s (fun _ -> f) () th
-*)
 
-(*
 let theory_iter_proof_attempt s f th =
   theory_iter_proofn s
     (fun pn -> Hprover.iter (fun _ pan ->
                              let pan = get_proof_attempt_node s pan in
                              f pan)
          pn.proofn_attempts) th
-*)
 
 (**************)
 (* Copy/Paste *)
@@ -1550,7 +1554,7 @@ let save_proof_attempt fmt ((id,tl,sl,ml),a) =
     (save_int_def "steplimit" sl) (a.limit.Call_provers.limit_steps)
     (save_int_def "memlimit" ml) (a.limit.Call_provers.limit_mem)
     (save_bool_def "obsolete" false) a.proof_obsolete
-    (save_option_def "proof_script") a.proof_script;
+    (save_option_def "edited") a.proof_script;
   save_status fmt a.proof_state;
   fprintf fmt "</proof>@]"
 

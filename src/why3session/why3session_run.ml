@@ -8,11 +8,12 @@
 (*  on linking described in file LICENSE.                           *)
 (*                                                                  *)
 (********************************************************************)
+
 (*
 open Why3
 open Why3session_lib
 open Whyconf
-open Session
+open Session_itp
 open Format
 open Debug
 module Todo = Session_scheduler.Todo

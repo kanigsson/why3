@@ -1,7 +1,4 @@
 
-(*exception NotADirectory of string
-exception BadFileName of string
- *)
 
 val get_session_dir : allow_mkdir:bool -> string Queue.t -> string
 (** [get_session_dir q] analyses the queue of filenames [q] and
@@ -17,7 +14,6 @@ val get_session_dir : allow_mkdir:bool -> string Queue.t -> string
     load later in the session.
 
  *)
-
 
 (** Simple queries *)
 

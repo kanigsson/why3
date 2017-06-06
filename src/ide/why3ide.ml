@@ -200,14 +200,6 @@ let () =
   Gconfig.init ()
 
 
-
-
-
-
-
-
-
-
 (********************************)
 (* Source language highlighting *)
 (********************************)
@@ -249,10 +241,6 @@ let try_convert s =
     with Glib.Convert.Error _ as e -> Printexc.to_string e
 
 
-
-
-
-
 (****************************)
 (* Color handling in source *)
 (****************************)
@@ -283,10 +271,6 @@ let erase_color_loc (v:GSourceView2.source_view) =
   buf#remove_tag_by_name "neg_premise_tag" ~start:buf#start_iter ~stop:buf#end_iter;
   buf#remove_tag_by_name "goal_tag" ~start:buf#start_iter ~stop:buf#end_iter;
   buf#remove_tag_by_name "error_tag" ~start:buf#start_iter ~stop:buf#end_iter
-
-
-
-
 
 
 
@@ -373,19 +357,6 @@ let update_label_saved (label: GMisc.label) =
   let s = label#text in
   if (Strings.has_prefix "*" s) then
     label#set_text (String.sub s 1 (String.length s - 1))
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 (**********************)
@@ -478,6 +449,13 @@ let mark_obsolete_item =
   create_menu_item tools_factory "Mark obsolete"
                    "Mark all proof nodes below the current selected nodes as obsolete"
 
+let focus_item =
+  create_menu_item tools_factory "Focus"
+    "Focus on proof node"
+
+let unfocus_item =
+  create_menu_item tools_factory "Unfocus"
+    "Unfocus"
 
 (* 1.3 "View" menu items *)
 
@@ -1322,8 +1300,25 @@ let () =
                | [r] ->
                    let id = get_node_id r#iter in
                    send_request (Mark_obsolete_req id)
-               | _ -> print_message "Select only one node to perform this action")
-
+               | _ -> print_message "Select only one node to perform this action");
+  connect_menu_item
+    focus_item
+    ~callback:(fun () ->
+      match get_selected_row_references () with
+      | [r] ->
+          let id = get_node_id r#iter in
+          send_request (Focus_req id);
+          (* TODO not efficient *)
+          clear_tree_and_table goals_model;
+          send_request (Get_Session_Tree_req);
+      | _ -> print_message "Select only one node to perform this action");
+  connect_menu_item
+    unfocus_item
+    ~callback:(fun () ->
+      send_request Unfocus_req;
+      (* TODO not efficient *)
+      clear_tree_and_table goals_model;
+      send_request (Get_Session_Tree_req))
 
 
 (*************************************)

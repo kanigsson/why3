@@ -1,5 +1,7 @@
 open Trans
 open Term
+open Ident
+open Ty
 open Decl
 open Theory
 open Task
@@ -16,7 +18,7 @@ exception Cannot_infer_type of string
 let debug_matching = Debug.register_info_flag "print_match"
   ~desc:"Print@ terms@ that@ were@ not@ successfully@ matched@ by@ ITP@ tactic@ apply."
 
-let rec dup n x = if n = 0 then [] else x::(dup (n-1) x)
+(* let rec dup n x = if n = 0 then [] else x::(dup (n-1) x) *)
 
 let gen_ident = Ident.id_fresh
 
@@ -99,20 +101,6 @@ let exists_aux g x =
    Return an error if x and t are not unifiable. *)
 let exists x =
   Trans.goal (fun _ g -> exists_aux g x)
-
-(* Return a new task with hypothesis name removed *)
-let remove_task_decl (name: Ident.ident) : task trans =
-  Trans.decl
-    (fun d ->
-     match d.d_node with
-    | Dprop (Paxiom, pr, _) when (Ident.id_equal pr.pr_name name) ->
-       []
-    | _ -> [d])
-    None
-
-(* from task [delta, name:A |- G]  build the task [delta |- G] *)
-let remove name =
-  remove_task_decl name.pr_name
 
 (* from task [delta, name1, name2, ... namen |- G] build the task [delta |- G] *)
 let remove_list name_list =
@@ -523,12 +511,6 @@ let or_intro (left: bool) : Task.task Trans.trans =
       end
     | _ -> [d]) None
 
-(* TODO to be done ... *)
-open Ident
-open Ty
-open Term
-open Decl
-
 (* TODO temporary for intros *)
 let rec intros n pr f =
   if n = 0 then [create_prop_decl Pgoal pr f] else
@@ -617,6 +599,7 @@ let unfold unf h =
         end
       | _ -> [d]) None
 
+(* from task [delta, name1, name2, ... namen |- G] build the task [name1, name2, ... namen |- G] *)
 let clear_but (l: prsymbol list) =
   Trans.decl
     (fun d ->
@@ -670,10 +653,9 @@ let () = wrap_and_register ~desc:"remove a literal using an equality on it"
     "subst"
     (Tlsymbol Ttrans) subst
 
-(* TODO give a list of hypothesis *)
 let () = wrap_and_register ~desc:"clear all axioms but the hypothesis argument"
     "clear_but"
-    (Tprsymbol Ttrans) (fun x -> clear_but [x])
+    (Tprlist Ttrans) clear_but
 
 
 let () = wrap_and_register ~desc:"left transform a goal of the form A \\/ B into A"
@@ -716,13 +698,8 @@ let () = wrap_and_register
     (Tterm Ttrans) exists
 
 let () = wrap_and_register
-    ~desc:"remove <prop> removes hypothesis named prop"
-    "remove"
-    (Tprsymbol Ttrans) remove
-
-let () = wrap_and_register
-    ~desc:"remove_list <prop list>: removes a list of hypothesis when given their names. Example syntax: remove_list a,b,c "
-     "remove_list"
+    ~desc:"remove <prop list>: removes a list of hypothesis given by their names separated with ','. Example: remove_list a,b,c "
+     "remove"
      (Tprlist Ttrans) remove_list
 
 let () = wrap_and_register
@@ -734,9 +711,9 @@ let () = wrap_and_register
     ~desc:"apply <prop> applies prop to the goal" "apply"
     (Tprsymbol Ttrans_l) apply
 
-let () = wrap_and_register
-    ~desc:"duplicate <int> duplicates the goal int times" "duplicate"
-    (Tint Ttrans_l) (fun x -> Trans.store (dup x))
+(* let () = wrap_and_register *)
+(*     ~desc:"duplicate <int> duplicates the goal int times" "duplicate" *)
+(*     (Tint Ttrans_l) (fun x -> Trans.store (dup x)) *)
 
 let () = wrap_and_register
     ~desc:"use_th <theory> imports the theory" "use_th"
