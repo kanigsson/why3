@@ -68,12 +68,13 @@ let timeout ~ms f =
   insert_timeout_handler ms (time +. ms) f
 
 (* buffer for storing character read on stdin *)
-let buf = Bytes.create 1024
+let buf = Bytes.create 256
 
 let main_loop treat_requests =
   (* attempt to run the first timeout handler *)
-  let time = Unix.gettimeofday () in
   while true do
+    let time = Unix.gettimeofday () in
+    try (
     match !timeout_handler with
      | (ms,t,f) :: rem when t <= time ->
         timeout_handler := rem;
@@ -82,9 +83,6 @@ let main_loop treat_requests =
         if b then insert_timeout_handler ms (ms +. time) f
      | _ ->
            (* no idle handler *)
-(*
-           eprintf "check connection for a some delay@.";
-*)
            let delay =
              match !timeout_handler with
              | [] -> 0.125
@@ -95,9 +93,9 @@ let main_loop treat_requests =
            begin
              let (todo, _, _) = Unix.select [Unix.stdin] [] [] delay in
              (* TODO maximum size of request for now *)
-             if todo == [Unix.stdin] then
-               let n = Unix.read Unix.stdin buf 0 1024 in
-               if n = 0 then
+             if todo != [] then
+               let n = try Unix.read Unix.stdin buf 0 256 with _ -> 0 in
+               if n < 1 then
                  begin
                    (* attempt to run the first idle handler *)
                    match !idle_handler with
@@ -108,9 +106,11 @@ let main_loop treat_requests =
                    | [] -> ()
                  end
                else
-                 let s = Bytes.sub_string buf 0 (n-1) in
-                 (* TODO here maybe empty completely stdin ? *)
-                 treat_requests s
+                 begin
+                   let s = Bytes.sub_string buf 0 (n-1) in
+                   (* TODO here maybe empty completely stdin ? *)
+                   treat_requests s
+                 end
              else
                begin
                  (* attempt to run the first idle handler *)
@@ -122,6 +122,7 @@ let main_loop treat_requests =
                  | [] -> ()
                end
            end
+  ) with e -> raise e;
   done
 end
 

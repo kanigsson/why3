@@ -1244,7 +1244,7 @@ end
     | Set_max_tasks_req i     -> C.set_max_tasks i
     | Exit_req                -> exit 0
      )
-    with e when not (Debug.test_flag Debug.stack_trace)->
+    with e when not (Debug.test_flag Debug.stack_trace) ->
       P.notify (Message (Error (Pp.string_of
           (fun fmt (r,e) -> Format.fprintf fmt
              "There was an unrecoverable error during treatment of request:\n %a\nwith exception: %a"
