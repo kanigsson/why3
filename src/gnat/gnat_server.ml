@@ -1,7 +1,8 @@
 open Why3
 open Format
-open Itp_communication
 open Json_util
+
+let debug = false
 
 module Gnat_Protocol = struct
 
@@ -122,7 +123,10 @@ let main_loop treat_requests =
                  | [] -> ()
                end
            end
-  ) with e -> raise e;
+  ) with e ->  Format.printf "FAIL TODO %a>>>>@." Exn_printer.exn_printer e;
+    if debug then
+      (* TODO *)
+      raise e
   done
 end
 

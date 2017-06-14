@@ -615,11 +615,12 @@ GNATMODULES := $(addprefix src/gnat/, $(GNAT_FILES))
 GNATML  = $(addsuffix .ml,  $(GNATMODULES))
 GNATMLI = $(addsuffix .mli, $(filter-out %gnat_main %gnat_server, $(GNATMODULES)))
 GNATCMI = $(addsuffix .cmi, $(filter-out %gnat_main %gnat_server, $(GNATMODULES)))
-GNATCMO = $(addsuffix .cmo, $(GNATMODULES))
-GNATCMX = $(addsuffix .cmx, $(GNATMODULES))
+GNATCMO = $(addsuffix .cmo, $(filter-out %gnat_server, $(GNATMODULES)))
+GNATCMX = $(addsuffix .cmx, $(filter-out %gnat_server, $(GNATMODULES)))
 GNATSERVCMO = $(addsuffix .cmo, $(filter-out %gnat_main, $(GNATMODULES)))
 GNATSERVCMX = $(addsuffix .cmx, $(filter-out %gnat_main, $(GNATMODULES)))
 $(GNATCMO) $(GNATCMX): INCLUDES += -I src/programs -I src/gnat -I src/util
+$(GNATSERVCMO) $(GNATSERVCMX): INCLUDES += -I src/programs -I src/gnat -I src/util
 $(GNATCMX): $(GNATCMO)
 
 # build targets
