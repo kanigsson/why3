@@ -3,7 +3,7 @@ open Format
 open Itp_communication
 open Json_util
 
-module Protocol_SPARKITP = struct
+module Gnat_Protocol = struct
 
   let requests = ref []
 
@@ -25,7 +25,7 @@ module Protocol_SPARKITP = struct
 
 end
 
-module TODO_Scheduler = struct
+module Gnat_Scheduler = struct
 
 (* the private list of functions to call on idle, sorted higher
        priority first. *)
@@ -126,7 +126,7 @@ let main_loop treat_requests =
   done
 end
 
-module Server = Itp_server.Make (TODO_Scheduler) (Protocol_SPARKITP)
+module Server = Itp_server.Make (Gnat_Scheduler) (Gnat_Protocol)
 
 (************************)
 (* parsing command line *)
@@ -168,11 +168,10 @@ let () =
   in
   Server.init_server gconfig env dir
 
-(* TODO *)
-(***********************)
-(* start the daemon    *)
-(***********************)
 
+(***********************)
+(* start the server    *)
+(***********************)
 
 let () =
-  TODO_Scheduler.main_loop Protocol_SPARKITP.push_request_string
+  Gnat_Scheduler.main_loop Gnat_Protocol.push_request_string
