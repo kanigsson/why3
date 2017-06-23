@@ -622,7 +622,7 @@ end
   let task_driver config env =
     try
       let main = Whyconf.get_main config in
-      let d = "why3_itp" in
+      let d = "spark" in (* TODO replace this *)
       let d = Whyconf.load_driver main env d [] in
       Debug.dprintf debug "[ITP server] driver for task printing loaded@.";
       d
