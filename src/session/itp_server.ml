@@ -15,25 +15,28 @@ exception Bad_prover_name of string
    Else, return the concatenation of the reversed list of unproven
    goals below the transformation and acc *)
 let rec unproven_goals_below_tn cont acc tn =
-  if tn_proved cont tn then
+  let s = cont.controller_session in
+  if tn_proved s tn then
     acc                         (* we ignore "dead" goals *)
   else
-    let sub_tasks = get_sub_tasks cont.controller_session tn in
+    let sub_tasks = get_sub_tasks s tn in
     List.fold_left (unproven_goals_below_pn cont) acc sub_tasks
 
 (* Same as unproven_goals_below_tn; note that if goal is not proved
    and there is no transformation, goal is returned (else it is not) *)
 and unproven_goals_below_pn cont acc goal =
-  if pn_proved cont goal then
+  let s = cont.controller_session in
+  if pn_proved s goal then
     acc                         (* we ignore "dead" transformations *)
   else
-    match get_transformations cont.controller_session goal with
+    match get_transformations s goal with
     | [] -> goal :: acc
     | tns -> List.fold_left (unproven_goals_below_tn cont) acc tns
 
 (* Same as unproven_goals_below_tn *)
 let unproven_goals_below_th cont acc th =
-  if th_proved cont th then
+  let s = cont.controller_session in
+  if th_proved s th then
     acc
   else
     let goals = theory_goals th in
@@ -41,10 +44,11 @@ let unproven_goals_below_th cont acc th =
 
 (* Same as unproven_goals_below_tn *)
 let unproven_goals_below_file cont file =
-  if file_proved cont file then
+  let s = cont.controller_session in
+  if file_proved s file then
     []
   else
-    let theories = file.file_theories in
+    let theories = file_theories file in
     List.fold_left (unproven_goals_below_th cont) [] theories
 
 let unproven_goals_below_id cont id =
@@ -273,19 +277,19 @@ let print_request fmt r =
 
 let print_msg fmt m =
   match m with
-  | Proof_error (_ids, s)  -> fprintf fmt "proof error %s" s
-  | Transf_error (_ids, s) -> fprintf fmt "transf error %s" s
-  | Strat_error (_ids, s)  -> fprintf fmt "start error %s" s
-  | Replay_Info s          -> fprintf fmt "replay info %s" s
-  | Query_Info (_ids, s)   -> fprintf fmt "query info %s" s
-  | Query_Error (_ids, s)  -> fprintf fmt "query error %s" s
-  | Help _s                -> fprintf fmt "help"
-  | Information s          -> fprintf fmt "info %s" s
-  | Task_Monitor _         -> fprintf fmt "task montor"
-  | Parse_Or_Type_Error s  -> fprintf fmt "parse_or_type_error:\n %s" s
-  | File_Saved s           -> fprintf fmt "file saved %s" s
-  | Error s                -> fprintf fmt "%s" s
-  | Open_File_Error s      -> fprintf fmt "%s" s
+  | Proof_error (_ids, s)      -> fprintf fmt "proof error %s" s
+  | Transf_error (_ids, s)     -> fprintf fmt "transf error %s" s
+  | Strat_error (_ids, s)      -> fprintf fmt "start error %s" s
+  | Replay_Info s              -> fprintf fmt "replay info %s" s
+  | Query_Info (_ids, s)       -> fprintf fmt "query info %s" s
+  | Query_Error (_ids, s)      -> fprintf fmt "query error %s" s
+  | Help _s                    -> fprintf fmt "help"
+  | Information s              -> fprintf fmt "info %s" s
+  | Task_Monitor _             -> fprintf fmt "task montor"
+  | Parse_Or_Type_Error (_, s) -> fprintf fmt "parse_or_type_error:\n %s" s
+  | File_Saved s               -> fprintf fmt "file saved %s" s
+  | Error s                    -> fprintf fmt "%s" s
+  | Open_File_Error s          -> fprintf fmt "%s" s
 
 (* TODO ad hoc printing. Should reuse print_loc. *)
 let print_loc fmt (loc: Loc.position) =
@@ -304,7 +308,9 @@ let print_notify fmt n =
       begin
         match nf with
         | Proved b -> fprintf fmt "node change %d Proved %b" ni b
+(*
         | Obsolete b -> fprintf fmt "node change %d Obsolete %b" ni b
+*)
         | Proof_status_change(st,b,_lim) ->
            fprintf fmt "node change %d Proof_status_change res=%a obsolete=%b limits=<TODO>"
                    ni Controller_itp.print_status st b
@@ -411,7 +417,7 @@ let () =
   let node_ID_from_pn   pn   = Hpn.find pn_to_node_ID pn
   let node_ID_from_tn   tn   = Htn.find tn_to_node_ID tn
   let node_ID_from_th   th   = Ident.Hid.find th_to_node_ID (theory_name th)
-  let node_ID_from_file file = Hstr.find file_to_node_ID (file.file_name)
+  let node_ID_from_file file = Hstr.find file_to_node_ID (file_name file)
 
   let node_ID_from_any  any  =
     match any with
@@ -424,9 +430,9 @@ let () =
   let remove_any_node_ID any =
     match any with
     | AFile file ->
-        let nid = Hstr.find file_to_node_ID file.file_name in
+        let nid = Hstr.find file_to_node_ID (file_name file) in
         Hint.remove model_any nid;
-        Hstr.remove file_to_node_ID file.file_name
+        Hstr.remove file_to_node_ID (file_name file)
     | ATh th     ->
         let nid = Ident.Hid.find th_to_node_ID (theory_name th) in
         Hint.remove model_any nid;
@@ -452,7 +458,7 @@ let () =
 
   let add_node_to_table node new_id =
     match node with
-    | AFile file -> Hstr.add file_to_node_ID file.file_name new_id
+    | AFile file -> Hstr.add file_to_node_ID (file_name file) new_id
     | ATh th     -> Ident.Hid.add th_to_node_ID (theory_name th) new_id
     | ATn tn     -> Htn.add tn_to_node_ID tn new_id
     | APn pn     -> Hpn.add pn_to_node_ID pn new_id
@@ -553,6 +559,14 @@ module P = struct
 
   let get_requests = Pr.get_requests
 
+  (* true if nid is below f_node or does not exists (in which case the
+     notification is a remove). false if not below.  *)
+  let is_below s nid f_node =
+    let any = try Some (any_from_node_ID nid) with _ -> None in
+    match any with
+    | None -> true
+    | Some any -> Session_itp.is_below s any f_node
+
   let notify n =
     let d = get_server_data() in
     let s = d.cont.controller_session in
@@ -562,10 +576,8 @@ module P = struct
         let updated_node = get_modified_node n in
         match updated_node with
         | None -> Pr.notify n
-        | Some nid when
-            let any = any_from_node_ID nid in
-            Session_itp.is_below s any f_node ->
-              Pr.notify n
+        | Some nid when is_below s nid f_node ->
+            Pr.notify n
         | _ -> ()
 
 end
@@ -601,23 +613,41 @@ end
     let s = d.cont.controller_session in
     let files = Session_itp.get_files s in
     Stdlib.Hstr.iter (fun _ f ->
-                      Format.eprintf "File : %s@." f.file_name;
-                      read_and_send f.file_name) files
+                      Format.eprintf "File : %s@." (file_name f);
+                      read_and_send (file_name f)) files
+
+  let relativize_location s loc =
+    let f, l, b, e = Loc.get loc in
+    let f = Sysutil.relativize_filename (Session_itp.get_dir s) f in
+    Loc.user_position f l b e
 
   (* Reload_files that is used even if the controller is not correct. It can
      be incorrect and end up in a correct state. *)
   let reload_files cont ~use_shapes =
     try reload_files cont ~use_shapes; true with
+    | Loc.Located (loc, e) ->
+      let loc = relativize_location cont.controller_session loc in
+      let s = Format.asprintf "%a at %a@."
+          Exn_printer.exn_printer e Pretty.print_loc loc in
+      P.notify (Message (Parse_Or_Type_Error (loc, s)));
+      false
     | e ->
       let s = Format.asprintf "%a@." Exn_printer.exn_printer e in
-      P.notify (Message (Parse_Or_Type_Error s));
+      P.notify (Message (Parse_Or_Type_Error (Loc.dummy_position, s)));
       false
 
-  let add_file c ?format fname =
-    try add_file c ?format fname; true with
+  let add_file cont ?format fname =
+    try add_file cont ?format fname; true with
+    | Loc.Located (loc, e) ->
+      let loc = relativize_location cont.controller_session loc in
+      let s = Format.asprintf "%a at %a@."
+          Exn_printer.exn_printer e Pretty.print_loc loc in
+      P.notify (Message (Parse_Or_Type_Error (loc, s)));
+      false
     | e ->
-        let s = Format.asprintf "%a@." Exn_printer.exn_printer e in
-        P.notify (Message (Parse_Or_Type_Error s)); false
+      let s = Format.asprintf "%a@." Exn_printer.exn_printer e in
+      P.notify (Message (Parse_Or_Type_Error (Loc.dummy_position, s)));
+      false
 
   let task_driver config env =
     try
@@ -630,8 +660,6 @@ end
       Format.eprintf "Fatal error while loading itp driver: %a@." Exn_printer.exn_printer e;
       exit 1
 
-  let get_prover_list (config: Whyconf.config) =
-    Mstr.fold (fun x _ acc -> x :: acc) (Whyconf.get_prover_shortcuts config) []
 
   (* -----------------------------------   ------------------------------------- *)
 
@@ -646,10 +674,8 @@ end
   let get_node_name (node: any) =
     let d = get_server_data () in
     match node with
-    | AFile file ->
-      file.file_name
-    | ATh th ->
-      (theory_name th).Ident.id_string
+    | AFile file -> file_name file
+    | ATh th -> (theory_name th).Ident.id_string
     | ATn tn ->
        let name = get_transf_name d.cont.controller_session tn in
        let args = get_transf_args d.cont.controller_session tn in
@@ -658,7 +684,9 @@ end
          String.sub full 0 40 ^ " ..."
        else full
     | APn pn ->
-      (get_proof_name d.cont.controller_session pn).Ident.id_string
+       let name = (get_proof_name d.cont.controller_session pn).Ident.id_string in
+       let expl = get_proof_expl d.cont.controller_session pn in
+       if expl = "" then name else name ^ " [" ^ expl ^ "]"
     | APa pa ->
       let pa = get_proof_attempt_node d.cont.controller_session pa in
       Pp.string_of Whyconf.print_prover pa.prover
@@ -670,27 +698,27 @@ end
   let get_node_proved new_id (node: any) =
     let d = get_server_data () in
     let cont = d.cont in
+    let s = cont.controller_session in
     match node with
     | AFile file ->
-      P.notify (Node_change (new_id, Proved (file_proved cont file)))
+      P.notify (Node_change (new_id, Proved (file_proved s file)))
     | ATh th ->
-      P.notify (Node_change (new_id, Proved (th_proved cont th)))
+      P.notify (Node_change (new_id, Proved (th_proved s th)))
     | ATn tn ->
-      P.notify (Node_change (new_id, Proved (tn_proved cont tn)))
+      P.notify (Node_change (new_id, Proved (tn_proved s tn)))
     | APn pn ->
-      P.notify (Node_change (new_id, Proved (pn_proved cont pn)))
+      P.notify (Node_change (new_id, Proved (pn_proved s pn)))
     | APa pa ->
-      let pa = get_proof_attempt_node cont.controller_session pa in
-      let is_obsolete = pa.proof_obsolete in
-      let resource_limit = pa.limit in
-      begin
+      let pa = get_proof_attempt_node s pa in
+      let obs = pa.proof_obsolete in
+      let limit = pa.limit in
+      let res =
         match pa.Session_itp.proof_state with
-        | Some pa ->
-            P.notify (Node_change (
-                       new_id, Proof_status_change
-                                (Done pa, is_obsolete, resource_limit)))
-        | _ -> ()
-      end
+        | Some pa -> Done pa
+        | _ -> InternalFailure Not_found
+      in
+      P.notify (Node_change (new_id, Proof_status_change(res, obs, limit)))
+
 
 (*
   let get_info_and_type ses (node: any) =
@@ -782,8 +810,7 @@ end
     (f: parent:node_ID -> any -> unit) parent file =
     f ~parent (AFile file);
     let nid = node_ID_from_file file in
-    List.iter (iter_subtree_from_theory f nid)
-      file.file_theories
+    List.iter (iter_subtree_from_theory f nid) (file_theories file)
 
   let iter_the_files (f: parent:node_ID -> any -> unit) parent : unit =
     let d = get_server_data () in
@@ -849,7 +876,7 @@ end
        let s, list_loc = task_of_id d parid in
        P.notify (Task (nid,s ^ "\n====================> Prover: " ^ name ^ "\n", list_loc))
     | AFile f ->
-       P.notify (Task (nid, "File " ^ f.file_name, []))
+       P.notify (Task (nid, "File " ^ file_name f, []))
     | ATn tid ->
        let name = get_transf_name d.cont.controller_session tid in
        let args = get_transf_args d.cont.controller_session tid in
@@ -895,7 +922,11 @@ end
                      { task_driver = task_driver;
                        cont = c };
     let d = get_server_data () in
-    let prover_list = get_prover_list config in
+    let prover_list =
+      Mstr.fold (fun x p acc ->
+                 let n = Pp.sprintf "%a" Whyconf.print_prover p in
+                 (x,n) :: acc) (Whyconf.get_prover_shortcuts config) []
+    in
     let transformation_list = List.map fst (list_transforms ()) in
     let strategies_list =
       let l = strategies d.cont.controller_env config loaded_strategies in
@@ -945,14 +976,22 @@ end
   let notify_change_proved c x =
     try
       let node_ID = node_ID_from_any x in
-      let b = any_proved c x in
+      let b = any_proved c.controller_session x in
       P.notify (Node_change (node_ID, Proved b));
       match x with
       | APa pa ->
-         let obs = (get_proof_attempt_node c.controller_session pa).proof_obsolete in
-         P.notify (Node_change (node_ID, Obsolete obs))
+         let pa = get_proof_attempt_node c.controller_session pa in
+         let res = match pa.Session_itp.proof_state with
+           | None -> InternalFailure Not_found
+           | Some r -> Done r
+         in
+         let obs = pa.proof_obsolete in
+         let limit = pa.limit in
+         P.notify (Node_change (node_ID, Proof_status_change(res, obs, limit)))
       | _ -> ()
-    with Not_found -> ()
+    with Not_found ->
+      Format.eprintf "Anomaly: Itp_server.notify_change_proved@.";
+      exit 1
 
   let schedule_proof_attempt ~counterexmp nid (p: Whyconf.config_prover) limit =
     let d = get_server_data () in
@@ -1050,11 +1089,11 @@ end
   (* ----------------- Clean session -------------------- *)
   let clean_session () =
     let d = get_server_data () in
-    let remove x =
+    let removed x =
       let nid = node_ID_from_any x in
       remove_any_node_ID x;
       P.notify (Remove nid) in
-    C.clean_session d.cont ~remove
+    C.clean_session d.cont ~removed
 
 
   (* ----------------- Save session --------------------- *)
@@ -1093,6 +1132,9 @@ end
   let () = register_command "replay" "replay obsolete proofs"
     (Qnotask (fun _cont _args ->  replay_session (); "replay in progress, be patient"))
 
+  let () = register_command "clean" "remove unsuccessful proof attempts that are below proved goals"
+    (Qnotask (fun _cont _args ->  clean_session (); "Cleaning in progress"))
+
   (* ---------------- Mark obsolete ------------------ *)
   let mark_obsolete n =
     let d = get_server_data () in
@@ -1107,12 +1149,13 @@ end
   (* ----------------- locate next unproven node -------------------- *)
 
   let notify_first_unproven_node d ni =
+    let s = d.cont.controller_session in
     let any = any_from_node_ID ni in
       let unproven_any =
         get_first_unproven_goal_around
-          ~proved:(Controller_itp.any_proved d.cont)
-          ~children:(get_undetached_children_no_pa d.cont.controller_session)
-          ~get_parent:(get_any_parent d.cont.controller_session)
+          ~proved:(Session_itp.any_proved s)
+          ~children:(get_undetached_children_no_pa s)
+          ~get_parent:(get_any_parent s)
           ~is_goal:(fun any -> match any with | APn _ -> true | _ -> false)
           ~is_pa:(fun any -> match any with | APa _ -> true | _ -> false)
           any in
@@ -1169,15 +1212,20 @@ end
     | Get_first_unproven_node ni   ->
       notify_first_unproven_node d ni
     | Focus_req nid ->
+        let d = get_server_data () in
+        let s = d.cont.controller_session in
         let any = any_from_node_ID nid in
-        focused_node := Some any
+        (match any with
+        | APa pa ->
+          focused_node := Some (APn (Session_itp.get_proof_attempt_parent s pa))
+        | _ -> focused_node := Some any)
     | Unfocus_req ->
         focused_node := None
     | Remove_subtree nid           ->
         let n = any_from_node_ID nid in
         begin
         try
-          Controller_itp.remove_subtree d.cont n
+          remove_subtree d.cont.controller_session n
             ~notification:(notify_change_proved d.cont)
             ~removed:(fun x ->
                         let nid = node_ID_from_any x in

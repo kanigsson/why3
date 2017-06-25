@@ -12,8 +12,12 @@ let convert_prover_to_json (p: Whyconf.prover) =
      "prover_altern", String p.Whyconf.prover_altern])
 
 let convert_infos (i: global_information) =
+  let convert_prover (s,p) =
+    Record (convert_record ["prover_shorcut", String s;
+                            "prover_name", String p])
+  in
   Record (convert_record
-    ["provers", List (List.map (fun x -> String x) i.provers);
+    ["provers", List (List.map convert_prover i.provers);
      "transformations", List (List.map (fun x -> String x) i.transformations);
      "strategies", List (List.map (fun x -> String x) i.strategies);
      "commands", List (List.map (fun x -> String x) i.commands)])
@@ -86,9 +90,12 @@ let convert_update u =
              "proof_attempt", convert_proof_attempt pas;
              "obsolete", Bool b;
              "limit", convert_limit l]
+(*
   | Obsolete b ->
       convert_record ["update_info", String "Obsolete";
-           "obsolete", Bool b])
+           "obsolete", Bool b]
+*)
+         )
 
 let convert_notification_constructor n =
   match n with
@@ -243,6 +250,13 @@ let convert_constructor_message (m: message_notification) =
   | Open_File_Error _     -> String "Open_File_Error"
   | File_Saved _          -> String "File_Saved"
 
+let convert_loc (loc: Loc.position) : Json_base.json =
+  let (file, line, col1, col2) = Loc.get loc in
+  Record (convert_record ["file", Json_base.String file;
+                          "line", Json_base.Int line;
+                          "col1", Json_base.Int col1;
+                          "col2", Json_base.Int col2])
+
 let convert_message (m: message_notification) =
   let cc = convert_constructor_message in
   Record (match m with
@@ -278,9 +292,10 @@ let convert_message (m: message_notification) =
   | Task_Monitor (n, k, p) ->
       convert_record ["mess_notif", cc m;
            "monitor", List [Int n; Int k; Int p]]
-  | Parse_Or_Type_Error s ->
+  | Parse_Or_Type_Error (loc, s) ->
       convert_record ["mess_notif", cc m;
-           "error", String s]
+                      "loc", convert_loc loc;
+                      "error", String s]
   | Error s ->
       convert_record ["mess_notif", cc m;
            "error", String s]
@@ -297,13 +312,6 @@ let convert_color (color: color) : Json_base.json =
     | Neg_premise_color -> "Neg_premise_color"
     | Premise_color -> "Premise_color"
     | Goal_color -> "Goal_color")
-
-let convert_loc (loc: Loc.position) : Json_base.json =
-  let (file, line, col1, col2) = Loc.get loc in
-  Record (convert_record ["file", Json_base.String file;
-                          "line", Json_base.Int line;
-                          "col1", Json_base.Int col1;
-                          "col2", Json_base.Int col2])
 
 let convert_loc_color (loc,color: Loc.position * color) : Json_base.json =
   let loc = convert_loc loc in
@@ -466,6 +474,10 @@ let parse_request (constr: string) j =
   | "Unfocus_req" ->
     Unfocus_req
 
+  | "Get_first_unproven_node" ->
+    let nid = get_int (get_field j "node_ID") in
+    Get_first_unproven_node nid
+
   | "Add_file_req" ->
     let f = get_string (get_field j "file") in
     Add_file_req f
@@ -604,9 +616,11 @@ let parse_update j =
     let b = get_bool (get_field j "obsolete") in
     let l = get_field j "limit" in
     Proof_status_change (parse_proof_attempt pas, b, parse_limit_from_json l)
+(*
   | "Obsolete" ->
     let b = get_bool (get_field j "obsolete") in
     Obsolete b
+*)
   | _ -> raise NotUpdate
 
 exception NotInfos
@@ -617,7 +631,10 @@ let parse_infos j =
     let tr = get_list (get_field j "transformations") in
     let str = get_list (get_field j "strategies") in
     let com = get_list (get_field j "commands") in
-    {provers = List.map (fun j -> match j with | String x -> x | _ -> raise NotInfos) pr;
+    {provers = List.map (fun j -> try
+                                 (get_string (get_field j "prover_shortcut"),
+                                  get_string (get_field j "prover_name"))
+                               with Not_found -> raise NotInfos) pr;
      transformations = List.map (fun j -> match j with | String x -> x | _ -> raise NotInfos) tr;
      strategies = List.map (fun j -> match j with | String x -> x | _ -> raise NotInfos) str;
      commands = List.map (fun j -> match j with | String x -> x | _ -> raise NotInfos) com}
@@ -678,6 +695,11 @@ let parse_message constr j =
   | "Open_File_Error" ->
     let s = get_string (get_field j "open_error") in
     Open_File_Error s
+
+  | "Parse_Or_Type_Error" ->
+    let loc = parse_loc (get_field j "loc") in
+    let error = get_string (get_field j "error") in
+    Parse_Or_Type_Error (loc, error)
 
   | _ -> raise NotMessage
 

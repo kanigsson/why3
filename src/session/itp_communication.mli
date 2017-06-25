@@ -11,7 +11,7 @@ val root_node : node_ID
    shared with the IDE through communication *)
 type global_information =
     {
-     provers         : prover list;
+     provers         : (string * prover) list;
      transformations : transformation list;
      strategies      : strategy list;
      commands        : string list
@@ -33,13 +33,13 @@ type message_notification =
   | Help                  of string
   (* General information *)
   | Information           of string
-  (* Number               of task scheduled, running, etc *)
+  (* Number of task scheduled, running, etc *)
   | Task_Monitor          of int * int * int
   (* A file was read or reloaded and now contains a parsing or typing error *)
-  | Parse_Or_Type_Error   of string
-  (* An error happened that could not be identified in server *)
-  | File_Saved            of string
+  | Parse_Or_Type_Error   of Loc.position * string
   (* [File_Saved f] f was saved *)
+  | File_Saved            of string
+  (* An error happened that could not be identified in server *)
   | Error                 of string
   | Open_File_Error       of string
 
@@ -65,7 +65,6 @@ type update_info =
       Controller_itp.proof_attempt_status
       * bool   (* obsolete or not *)
       * Call_provers.resource_limit
-  | Obsolete of bool
 
 type notification =
   | New_node     of node_ID * node_ID * node_type * string * bool

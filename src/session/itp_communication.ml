@@ -10,7 +10,7 @@ let root_node : node_ID = 0
 
 type global_information =
     {
-     provers         : prover list;
+     provers         : (string * prover) list;
      transformations : transformation list;
      strategies      : strategy list;
      commands        : string list;
@@ -32,7 +32,7 @@ type message_notification =
   | Help                  of string
   | Information           of string
   | Task_Monitor          of int * int * int
-  | Parse_Or_Type_Error   of string
+  | Parse_Or_Type_Error   of Loc.position * string
   | File_Saved            of string
   | Error                 of string
   | Open_File_Error       of string
@@ -59,7 +59,6 @@ type update_info =
       Controller_itp.proof_attempt_status
       * bool   (* obsolete or not *)
       * Call_provers.resource_limit
-  | Obsolete of bool
 
 type notification =
   | New_node     of node_ID * node_ID * node_type * string * bool
