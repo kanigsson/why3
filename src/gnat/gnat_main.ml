@@ -112,7 +112,7 @@ and create_manual_or_schedule (c: Controller_itp.controller) _obj goal =
   let s = c.Controller_itp.controller_session in
   match Gnat_config.manual_prover with
   | Some _ when C.goal_has_splits s goal &&
-                not (Controller_itp.pn_proved c goal) ->
+                not (Session_itp.pn_proved c.Controller_itp.controller_session goal) ->
                   handle_vc_result c goal false
 (* TODO recover this
     | Some p when Gnat_manual.is_new_manual_proof goal &&
@@ -135,7 +135,7 @@ and schedule_goal (c: Controller_itp.controller) (g : Session_itp.proofNodeID) =
    (* then implement reproving logic *)
    end else begin
      (* Maybe the goal is already proved *)
-      if Controller_itp.pn_proved c g then begin
+      if Session_itp.pn_proved c.Controller_itp.controller_session g then begin
          handle_vc_result c g true
       (* Maybe there was a previous proof attempt with identical parameters *)
       end else if Gnat_objectives.all_provers_tried c.Controller_itp.controller_session g then begin

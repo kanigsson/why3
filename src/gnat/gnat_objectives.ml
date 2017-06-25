@@ -517,7 +517,7 @@ let iter_main_goals s fu =
   let files = Session_itp.get_files s in
   let theories =
     Stdlib.Hstr.fold (fun _ (x:Session_itp.file) (acc: Session_itp.theory list) ->
-                        x.Session_itp.file_theories @ acc)
+                        (Session_itp.file_theories x) @ acc)
     files [] in
   let main_goals =
     List.fold_left (fun acc th -> (Session_itp.theory_goals th) @ acc) [] theories in
@@ -659,7 +659,7 @@ let add_to_prover_stat pr stat =
 
 (* TODO put this in Controller_itp *)
 let is_valid (c: Controller_itp.controller) goal =
-  Controller_itp.pn_proved c goal
+  Session_itp.pn_proved c.Controller_itp.controller_session goal
 
 let add_to_stat prover pr stat =
   (* add the result pr of the prover run of "prover" to the statistics table *)
@@ -683,7 +683,7 @@ let add_to_stat prover pr stat =
      with Exit ->
        try
          List.iter (fun tnid ->
-           if Controller_itp.tn_proved c tnid then
+           if Session_itp.tn_proved c.Controller_itp.controller_session tnid then
              List.iter (extract_stat_goal c stat)
                (Session_itp.get_sub_tasks ses tnid);
 
@@ -927,7 +927,7 @@ let session_proved_status c obj =
    let obj_rec = Gnat_expl.HCheck.find explmap obj in
    try
      GoalSet.iter
-       (fun x -> if not (Controller_itp.pn_proved c x) then raise Exit)
+       (fun x -> if not (Session_itp.pn_proved c.Controller_itp.controller_session x) then raise Exit)
        obj_rec.toplevel;
      true
    with Exit -> false
@@ -978,7 +978,7 @@ let session_find_unproved_pa c obj =
   let traversal_function () g =
     match g with
     | Session_itp.APn g ->
-        if Controller_itp.pn_proved c g then
+        if Session_itp.pn_proved c.Controller_itp.controller_session g then
           ()
         else
           let pa_ids_list = Session_itp.get_proof_attempt_ids session g in
