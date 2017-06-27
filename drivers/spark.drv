@@ -90,3 +90,9 @@ theory list.List
   syntax function Nil  "[]"
 
 end
+
+theory bv.BV8
+
+  syntax type t "Unsigned_8"
+
+end
