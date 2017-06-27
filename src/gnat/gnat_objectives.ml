@@ -24,7 +24,6 @@ type status =
    | Work_Left
    | Counter_Example
 
-
 module GoalCmp = struct
    (* module to provide comparison goals *)
   type t = goal_id

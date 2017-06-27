@@ -101,8 +101,8 @@ and interpret_result c pa pas =
      let session = c.Controller_itp.controller_session in
      let goal = Session_itp.get_proof_attempt_parent session pa in
      let answer = r.Call_provers.pr_answer in
-     if answer = Call_provers.HighFailure &&
-        not Gnat_config.counterexamples then
+     if answer = Call_provers.HighFailure && Gnat_config.debug &&
+        not (Gnat_config.is_ce_prover session pa) then
        Gnat_report.add_warning r.Call_provers.pr_output;
      handle_vc_result c goal (answer = Call_provers.Valid)
    | _ ->
@@ -279,7 +279,8 @@ let _ =
      | Gnat_config.No_WP ->
         (* we should never get here *)
         ()
-    with e ->
+    with e when Debug.test_flag Debug.stack_trace -> raise e
+    | e ->
        let s = Pp.sprintf "%a.@." Exn_printer.exn_printer e in
        Gnat_util.abort_with_message ~internal:true s
    end

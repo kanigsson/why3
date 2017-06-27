@@ -24,8 +24,6 @@ let rec file_concat l =
   | [x;y] -> Filename.concat x y
   | x :: xs -> Filename.concat x (file_concat xs)
 
-let spark_config_dir =
-  file_concat [spark_prefix; "share"; "spark"; "config"]
 let builtin_provers = ["altergo"; "cvc4"; "z3"]
 
 let spark_loadpath =
@@ -60,7 +58,6 @@ let opt_limit_subp : string option ref = ref None
 let opt_socket_name : string ref = ref ""
 let opt_standalone = ref false
 let opt_replay = ref false
-let opt_benchmark = ref false
 
 let opt_prepare_shared = ref false
 
@@ -139,6 +136,7 @@ let parse_line_spec s =
          invalid parameter number, must be \
          2 or 4")
   with
+   | e when Debug.test_flag Debug.stack_trace -> raise e
    | Failure "int_of_string" ->
       Gnat_util.abort_with_message ~internal:true
       ("limit-line: incorrect line specification -\
@@ -184,14 +182,16 @@ let options = Arg.align [
           " Use prover given in argument instead of Alt-Ergo";
    "--replay", Arg.Set opt_replay,
           " Do not try new proofs, only replay existing proofs";
-   "--benchmark", Arg.Set opt_benchmark,
-          " Load fake why3.conf instead of real one";
    "--socket", Arg.String set_socket_name,
           " The name of the socket to be used";
    "--debug", Arg.Tuple [Arg.Set opt_debug; Arg.Set opt_standalone],
           " Enable debug mode; also deactivates why3server";
    "--debug-server", Arg.Set opt_debug,
           " Enable debug mode and keep why3server activated";
+   "--debug-stack-trace", Arg.Tuple [Arg.Set opt_debug;
+            Arg.Unit (fun () -> Debug.set_flag Debug.stack_trace;
+                                Printexc.record_backtrace true)],
+          " Enable debug mode; and gives stack_trace on any exception raised";
    "--standalone", Arg.Set opt_standalone,
           " spawn its own VC server";
    "--proof-dir", Arg.String set_proof_dir,
@@ -208,11 +208,7 @@ let options = Arg.align [
 
 let () = Arg.parse options set_filename usage_msg
 
-let gnatprove_why3conf_file () =
-  if !opt_benchmark then
-    file_concat [spark_config_dir; "why3.conf.fake"]
-  else
-    file_concat [spark_config_dir; "why3.conf"]
+let gnatprove_why3conf_file () = "why3.conf"
 
 let merge_opt_keep_first _ v1 v2 =
   match v1, v2 with
@@ -230,14 +226,21 @@ let shortcut_merge s1 s2 =
 
 let find_driver_file fn =
   (* Here we search for the driver file. The argument [fn] is the driver path
-     as returned by the Why3 API. If the path in the why3.conf file is
-     relative, why3 completes this with the path of the why3.conf file. We
-     first look into that location, and if the file is not there, we look
-     into the SPARK config dir *)
-  if Sys.file_exists fn then fn
-  else
-    let driver_file = Filename.basename fn in
-    file_concat [spark_prefix;"share";"why3";"drivers";driver_file]
+     as returned by the Why3 API. It simply returns the path as is in the
+     configuration file. We first check if the path as is points to a file.
+     Then we try to find the file relative to the why3.conf file. If that also
+     fails, we look into the SPARK drivers dir *)
+  try
+    if Sys.file_exists fn then fn
+    else match !opt_why3_conf_file with
+    | Some f ->
+        let dir = Filename.dirname f in
+        let fn = Filename.concat dir fn in
+        if Sys.file_exists fn then fn else raise Exit
+    | None -> raise Exit
+  with Exit ->
+      let driver_file = Filename.basename fn in
+      file_concat [spark_prefix;"share";"why3";"drivers";driver_file]
 
 let computer_prover_str_list () =
   (* this is a string list of the requested provers by the user *)
@@ -273,6 +276,7 @@ let compute_base_provers config str_list =
         None in
     base_provers, base_prover_ce
   with
+  | e when Debug.test_flag Debug.stack_trace -> raise e
   | Not_found ->
     Gnat_util.abort_with_message ~internal:false
       "Default prover not installed or not configured."
@@ -337,7 +341,8 @@ let provers, prover_ce, config, env =
              (Whyconf.set_provers ~shortcuts gnatprove_config provers)
              editors
         end
-     with Rc.CannotOpen (f,s) ->
+     with e when Debug.test_flag Debug.stack_trace -> raise e
+     | Rc.CannotOpen (f,s) ->
        Gnat_util.abort_with_message ~internal:true
          (Format.sprintf "cannot read file %s: %s" f s)
   in
@@ -358,6 +363,24 @@ let provers, prover_ce, config, env =
       | None -> base_loadpath
     in
     Env.create_env extended_loadpath  in
+(* TODO merge
+  (* this function loads the driver for a given prover *)
+  let prover_driver base_prover =
+    try
+      let driver_file = find_driver_file base_prover.Whyconf.driver in
+      Driver.load_driver_absolute
+        env driver_file base_prover.Whyconf.extra_drivers
+    with e when Debug.test_flag Debug.stack_trace -> raise e
+    | e ->
+      let s =
+        Pp.sprintf "Failed to load driver for prover: %a"
+             Exn_printer.exn_printer e in
+      Gnat_util.abort_with_message ~internal:true s in
+  (* now we build the prover record for each requested prover *)
+  let build_prover_rec base_prover =
+    { Session.prover_driver = prover_driver  base_prover;
+      prover_config = base_prover} in
+*)
   let provers =
     List.map (fun x -> x.Whyconf.prover) base_provers in
   let prover_ce =
@@ -619,5 +642,13 @@ let is_selected_prover p =
     Some (List.find (fun g ->
       g = p) provers)
   with Not_found -> None
+
+let is_ce_prover s p =
+  counterexamples &&
+  match prover_ce with
+  | None -> false
+  | Some cep ->
+      let prover = (Session_itp.get_proof_attempt_node s p).Session_itp.prover in
+      cep = prover
 
 let replay = !opt_replay

@@ -531,7 +531,7 @@ let load_main dirname section =
     raise WrongMagicNumber;
   { libdir    = get_string ~default:default_main.libdir section "libdir";
     datadir   = get_string ~default:default_main.datadir section "datadir";
-    libobjdir = get_string ~default:default_main.libobjdir section "libobjdir";
+    libobjdir = Config.libobjdir;
     loadpath  = List.map (Sysutil.absolutize_filename dirname)
       (get_stringl ~default:[] section "loadpath");
     timelimit = get_int ~default:default_main.timelimit section "timelimit";
@@ -721,8 +721,11 @@ let merge_config config filename =
         if not (filter_prover fp p) then c
         else
           let opt = get_stringl ~default:[] section "option" in
+(* TODO FINISH MERGE
           let drv = List.map (Sysutil.absolutize_filename dirname)
             (get_stringl ~default:[] section "driver") in
+*)
+          let drv = get_stringl ~default:[] section "driver" in
           let bcmd = get_stringl ~default:[] section "build_command" in
           { c with
             extra_options = opt @ c.extra_options;
