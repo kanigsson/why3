@@ -364,13 +364,27 @@ let has_been_tried_by s (g: goal_id) (prover: Whyconf.prover) =
 let all_provers_tried s g =
   List.for_all (fun p -> has_been_tried_by s g p) Gnat_config.provers
 
+(* iter_leafs is actually an iter_leafs after the application of gnat_split so
+   it should only apply on direct children of transformations called gnat_split
+   (or alternatively on the goal itself) *)
+(* TODO check the correctness of this *)
+let iter_leafs s goal f =
+  let tr_list = Session_itp.get_transformations s goal in
+  (try
+    (*Format.eprintf "TODO %a@." (fun fmt l -> List.iter (fun x -> Format.fprintf fmt "%s" (Session_itp.get_transf_name s x)) l) tr_list;*)
+    let tr_gnat_split = List.find (fun x -> (*Session_itp.get_transf_name s x = "split_disj" || Session_itp.get_transf_name s x = "path_split" || *)  Session_itp.get_transf_name s x = "split_goal_wp_conj") tr_list in
+    let subsubgoals = Session_itp.get_sub_tasks s tr_gnat_split in
+    List.iter (fun pn -> f (Session_itp.APn pn)) subsubgoals
+  with Not_found -> ())
 
+(*
 let iter_leafs s goal f =
   Session_itp.fold_all_any
     s (fun _acc any -> match any with
                 | Session_itp.APn g -> if goal != g then f any
                 | _ -> ())
     () (Session_itp.APn goal)
+*)
 
 let iter_leaf_goals s subp f =
   let f x = match x with

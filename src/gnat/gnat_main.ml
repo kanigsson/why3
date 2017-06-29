@@ -66,7 +66,7 @@ let register_goal s goal_id =
      match is_trivial fml, search_labels fml with
      | true, None ->
          Gnat_objectives.set_not_interesting goal_id
-     | _, None ->
+     | false, None ->
          Gnat_util.abort_with_message ~internal:true
            "Task has no tracability label."
      | _, Some c ->
@@ -129,8 +129,8 @@ and schedule_goal (c: Controller_itp.controller) (g : Session_itp.proofNodeID) =
          * goal already proved
          * goal already attempted with identical options
    *)
-   if (true (*Gnat_config.manual_prover <> None
-       && not (Controller_itp.pn_proved c g)*)) then begin
+   if (Gnat_config.manual_prover <> None
+       && not (Session_itp.pn_proved c.Controller_itp.controller_session g)) then begin
        actually_schedule_goal c g
    (* then implement reproving logic *)
    end else begin
