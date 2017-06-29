@@ -58,6 +58,8 @@ module Gnat_scheduler = struct
         as a string to the function [interp] *)
      let main_loop ending =
        try
+         if !timeout_handler = [] && !idle_handler = [] then
+           raise Exit;
          while true do
            (* attempt to run the first timeout handler *)
            (let time = Unix.gettimeofday () in
