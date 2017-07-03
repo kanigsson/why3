@@ -108,7 +108,7 @@ let connect_internal () =
     ("why3server." ^ string_of_int (Unix.getpid ()) ^ ".sock") *)
     Filename.temp_file "why3server" "sock"
   in
-  let exec = Filename.concat Config.libdir "why3server" in
+  let exec = "why3server" in
   let pid = Unix.create_process exec
     [|exec; "--socket"; socket_name;
       "--single-client";
