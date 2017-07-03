@@ -25,21 +25,6 @@ open Gnat_scheduler
 
 module C = Gnat_objectives.Make (Gnat_scheduler)
 
-let search_labels =
-  let extract_wrap l =
-    match Gnat_expl.extract_check l with
-    | None -> []
-    | Some x -> [x] in
-  let search = Termcode.search_labels extract_wrap in
-  fun f ->
-    try
-    begin match search f with
-    | [] -> None
-    | [x] -> Some x
-    | _ -> assert false
-    end
-  with Exit -> None
-
 let rec is_trivial fml =
    (* Check wether the formula is trivial.  *)
    match fml.t_node with
@@ -63,7 +48,7 @@ let register_goal s goal_id =
     * trivial, do not register *)
      let task = Session_itp.get_task s goal_id in
      let fml = Task.task_goal_fmla task in
-     match is_trivial fml, search_labels fml with
+     match is_trivial fml, Gnat_expl.search_labels fml with
      | true, None ->
          Gnat_objectives.set_not_interesting goal_id
      | false, None ->

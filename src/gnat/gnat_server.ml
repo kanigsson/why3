@@ -159,7 +159,6 @@ let usage_str = sprintf
 let env, gconfig =
   Gnat_config.env, Gnat_config.config
 
-
 (* Initialization of config, provers, task_driver and controller in the server *)
 let () =
   Queue.add Gnat_config.filename files;
@@ -170,6 +169,25 @@ let () =
       Format.eprintf "Error: %s@." s;
       Whyconf.Args.exit_with_usage spec usage_str
   in
+  (match Gnat_config.limit_line with
+
+  | Some (Gnat_config.Limit_Check check) ->
+      let f task : bool =
+        let fml = Task.task_goal_fmla task in
+        let expl = Gnat_expl.search_labels fml in
+        match expl with
+        | None -> false
+        | Some expl ->
+        (check.Gnat_expl.reason = Gnat_expl.get_reason expl)
+        && (Gnat_loc.equal_orig_loc check.Gnat_expl.sloc (Gnat_expl.get_loc expl))
+      in
+      (* TODO maybe it would be more stable if we do not save the reference globally like this *)
+      Server.focused_node := Server.Wait_focus;
+      Server.register_label_detection f
+  (* TODO None and _ cases should be exit with errors *)
+  | None -> ()
+  | _ -> ()
+  );
   Server.init_server gconfig env dir
 
 
