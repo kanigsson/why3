@@ -1,3 +1,4 @@
+let debug = Debug.register_flag ~desc:"ITP server" "itp_server"
 
 let has_extension f =
   try
@@ -146,11 +147,6 @@ let print_id s tables =
   in
   Pp.string_of (Why3printer.print_decl tables) d
 
-let print_id _cont task args =
-  match args with
-  | [s] -> print_id s task
-  | _ -> raise Number_of_arguments
-
 let search s tables =
   (*let tables = Args_wrapper.build_name_tables task in*)
   let id_decl = tables.Task.id_decl in
@@ -160,7 +156,13 @@ let search s tables =
     try Ident.Mid.find id id_decl with
     | Not_found -> raise Not_found (* Should not happen *)
   in
-  Pp.string_of (Pp.print_list Pp.newline2 (Why3printer.print_decl tables)) l
+  let s_id = print_id s tables in
+  s_id ^ (Pp.string_of (Pp.print_list Pp.newline2 (Why3printer.print_decl tables)) l)
+
+let print_id _cont task args =
+  match args with
+  | [s] -> print_id s task
+  | _ -> raise Number_of_arguments
 
 let search_id _cont task args =
   match args with
@@ -189,10 +191,10 @@ let strategies env config loaded_strategies =
               let code = st.Whyconf.strategy_code in
               let code = Strategy_parser.parse env config code in
               let shortcut = st.Whyconf.strategy_shortcut in
-              Format.eprintf "[session server info] Strategy '%s' loaded.@." name;
+              Debug.dprintf debug "[session server info] Strategy '%s' loaded.@." name;
               (name, shortcut, st.Whyconf.strategy_desc, code) :: acc
             with Strategy_parser.SyntaxError msg ->
-              Format.eprintf
+              Debug.dprintf debug
                 "[session server warning] Loading strategy '%s' failed: %s@." name msg;
               acc)
           []
@@ -214,7 +216,7 @@ let return_prover name config =
   (** all provers that have the name/version/altern name *)
   let provers = Whyconf.filter_provers config fp in
   if Whyconf.Mprover.is_empty provers then begin
-    Format.eprintf "Prover corresponding to %s has not been found@." name;
+    Debug.dprintf debug "Prover corresponding to %s has not been found@." name;
     None
   end else
     Some (snd (Whyconf.Mprover.choose provers))
@@ -339,8 +341,11 @@ let interp commands_table config cont id s =
        in s
   with Not_found ->
     try
-      let t = Trans.lookup_trans cont.Controller_itp.controller_env cmd in
-      Transform (cmd,t,args)
+      if id = None then
+        QError ("Please select a valid node id")
+      else
+        let t = Trans.lookup_trans cont.Controller_itp.controller_env cmd in
+        Transform (cmd,t,args)
     with Trans.UnknownTrans _ ->
       interp_others commands_table config cmd args
 

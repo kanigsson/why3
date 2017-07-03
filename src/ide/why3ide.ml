@@ -1148,39 +1148,33 @@ let on_selected_row r =
   with
     | Not_found -> task_view#source_buffer#set_text ""
 
-let has_right_click = ref false
 
 let (_ : GtkSignal.id) =
   goals_view#selection#connect#after#changed ~callback:
     (fun () ->
+     Debug.dprintf debug "[IDE INFO] running callback of goals_view#selection#connect#after#changed@.";
      begin
        match get_selected_row_references () with
-       | [r] ->
-          on_selected_row r;
-          if !has_right_click then
-            begin
-              tools_menu#popup ~button:3 ~time:0l;
-              Debug.dprintf debug "[IDE INFO] after tools_menu#popup@.";
-              has_right_click := false
-            end
+       | [r] -> on_selected_row r;
        | _ -> ()
      end (* ;
-     command_entry#misc#grab_focus () *) ; has_right_click := false)
+     command_entry#misc#grab_focus () *))
 
-let _ =
-  (* This event is executed BEFORE the other connected event goals_view#selection#connect#after#changed above *)
-  (* We return false so that the second callback above is executed ? *)
+let (_ : GtkSignal.id) =
   let callback ev =
+    Debug.dprintf debug "[IDE INFO] running callback of goals_view#event#connect#button_press@.";
     let n = GdkEvent.Button.button ev in
     begin
+      Debug.dprintf debug "[IDE INFO] button number %d was clicked on the tree view@." n;
       match n with
       | 1 -> (* Left click *) ()
       | 2 -> (* Middle click *) ()
       | 3 -> (* Right click *)
-         has_right_click := true
+         Debug.dprintf debug "[IDE INFO] before tools_menu#popup@.";
+         tools_menu#popup ~button:3 ~time:(GdkEvent.Button.time ev);
+         Debug.dprintf debug "[IDE INFO] after tools_menu#popup@."
       | _ -> (* Error case TODO *) assert false
-     end;
-    Debug.dprintf debug "[IDE INFO] button number %d was clicked on the tree view@." n;
+    end;
     false
   in
   goals_view#event#connect#button_press ~callback
@@ -1319,33 +1313,41 @@ let (_ : GtkSignal.id) =
   menu_add_file#connect#activate ~callback:(fun () ->
       select_file ~request:(fun f -> send_request (Add_file_req f)))
 
-(* what is it for ?
-let open_session: GMenu.menu_item =
-  file_factory#add_item ~key:GdkKeysyms._O "Open session"
-    ~callback:(fun () ->
-      select_file ~request:(fun f ->
-        (* Clearing the ide tree *)
-        clear_tree_and_table goals_model;
-        send_request (Open_session_req f)))
- *)
-
 (*************************)
 (* Notification Handling *)
 (*************************)
 
 let treat_message_notification msg = match msg with
   (* TODO: do something ! *)
-  | Proof_error (_id, s)         -> print_message "%s" s
-  | Transf_error (_id, s)        -> print_message "%s" s
-  | Strat_error (_id, s)         -> print_message "%s" s
-  | Replay_Info s                -> print_message "%s" s
-  | Query_Info (_id, s)          -> print_message "%s" s
-  | Query_Error (_id, s)         -> print_message "%s" s
-  | Help s                       -> print_message "%s" s
-  | Information s                -> print_message "%s" s
-  | Task_Monitor (t, s, r)       -> update_monitor t s r
-  | Open_File_Error s            -> print_message "%s" s
-  | Parse_Or_Type_Error (loc, s) ->
+  | Proof_error (_id, s)                        -> print_message "%s" s
+  | Transf_error (_id, tr_name, arg, loc, msg) ->
+      if arg = "" then
+        print_message "%s\nTransformation failed: \n%s" msg tr_name
+      else
+        begin
+          let buf = message_zone#buffer in
+          (* Redefines the new tag for this buffer every time. I think this is
+             needed because we clear it often. *)
+          let _error = buf#create_tag
+              ~name:"error" [`BACKGROUND gconfig.neg_premise_color] in
+          print_message "%s\nTransformation failed. \nOn argument: \n%s \n%s" tr_name arg msg;
+          let color = "error" in
+          let _, _, beg_char, end_char = Loc.get loc in
+          let start = buf#start_iter#forward_lines 3 in
+          buf#apply_tag_by_name
+            ~start:(start#forward_chars beg_char)
+            ~stop:(start#forward_chars end_char)
+            color
+        end
+  | Strat_error (_id, s)                        -> print_message "%s" s
+  | Replay_Info s                               -> print_message "%s" s
+  | Query_Info (_id, s)                         -> print_message "%s" s
+  | Query_Error (_id, s)                        -> print_message "%s" s
+  | Help s                                      -> print_message "%s" s
+  | Information s                               -> print_message "%s" s
+  | Task_Monitor (t, s, r)                      -> update_monitor t s r
+  | Open_File_Error s                           -> print_message "%s" s
+  | Parse_Or_Type_Error (loc, s)                ->
     begin
       (* TODO find a new color *)
       color_loc ~color:Goal_color loc;

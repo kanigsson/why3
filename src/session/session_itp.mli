@@ -65,13 +65,19 @@ type proof_attempt_node = private {
   prover              : Whyconf.prover;
   limit               : Call_provers.resource_limit;
   mutable proof_state : Call_provers.prover_result option;
-  (* None means that the call was not done or never returned *)
+  (* None means that there is a prover call in progress *)
   mutable proof_obsolete      : bool;
   proof_script        : string option;  (* non empty for external ITP *)
 }
 
+val goal_iter_proof_attempt:
+    session -> (proof_attempt_node -> unit) -> proofNodeID -> unit
+
 val theory_iter_proof_attempt:
     session -> (proof_attempt_node -> unit) -> theory -> unit
+
+val file_iter_proof_attempt:
+    session -> (proof_attempt_node -> unit) -> file -> unit
 
 val session_iter_proof_attempt:
     (proofAttemptID -> proof_attempt_node -> unit) -> session -> unit
