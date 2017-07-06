@@ -1,6 +1,6 @@
 (* Why3 driver for then internal interactive theorem prover *)
 
-printer "spark_itp"
+printer "why3_itp"
 filename "%f-%t-%g.why"
 
 theory BuiltIn
