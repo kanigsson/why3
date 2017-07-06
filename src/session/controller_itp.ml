@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 open Format
 open Session_itp
 
@@ -494,7 +505,7 @@ let schedule_transformation_r c id name args ~callback =
   let apply_trans () =
     let task = get_task c.controller_session id in
     let table = match get_table c.controller_session id with
-    | None -> raise (Task.Bad_name_table "Controller_itp.schedule_transformation_r")
+    | None -> raise (Trans.Bad_name_table "Controller_itp.schedule_transformation_r")
     | Some table -> table in
     begin
       try

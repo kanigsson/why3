@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 open Task
 open Ty
 open Term
@@ -21,7 +32,8 @@ exception Arg_parse_error of string * string
 exception Arg_expected of string * string
 exception Arg_theory_not_found of string
 exception Arg_expected_none of string
-exception Arg_hyp_not_found of string
+exception Arg_qid_not_found of Ptree.qualid
+exception Arg_error of string
 
 let () = Exn_printer.register
     (fun fmt e ->
@@ -50,7 +62,7 @@ type symb =
   | Pr of prsymbol
 
 (* [add_unsafe s id tables] Add (s, id) to tables without any checking. *)
-let add_unsafe (s: string) (id: symb) (tables: names_table) : names_table =
+let add_unsafe (s: string) (id: symb) (tables: naming_table) : naming_table =
   match id with
   | Ts ty ->
       {tables with
@@ -66,7 +78,7 @@ let add_unsafe (s: string) (id: symb) (tables: names_table) : names_table =
 }
 
 (* Adds symbols that are introduced to a constructor *)
-let constructor_add (cl: constructor list) tables : names_table =
+let constructor_add (cl: constructor list) tables : naming_table =
   List.fold_left
     (fun tables ((ls, cl): constructor) ->
       let tables = List.fold_left
@@ -93,53 +105,9 @@ let ind_decl_add il tables =
     il
     tables
 
-let rec insert l d =
-  match l with
-  | hd :: tl -> if hd == d then l else hd :: insert tl d
-  | [] -> [d]
-
-let add_decls_id id d tables =
-  let l = try (Ident.Mid.find id tables.id_decl) with
-  | Not_found -> [] in
-  {tables with id_decl = Ident.Mid.add id (insert l d) tables.id_decl}
-
-(* [add_id tables d t] To all identifiants id used in t, adds the associated
-   declaration d in the table.id_decl *)
-let rec add_id tables d t =
-  match t.t_node with
-  | Tvar _ -> tables
-  | Tconst _ | Ttrue | Tfalse -> tables
-  | Tapp (l, tl) ->
-      let tables = add_decls_id l.ls_name d tables in
-      List.fold_left (fun tables t -> add_id tables d t) tables tl
-  | Tlet (t, tb) ->
-      let tables = add_id tables d t in
-      let (_v1, t1) = t_open_bound tb in
-      add_id tables d t1
-  | Tcase (t, tbl) ->
-      let tables = add_id tables d t in
-      List.fold_left (fun tables ob ->
-        let (_pat, t) = t_open_branch ob in
-        add_id tables d t) tables tbl
-  | Teps (tb) ->
-      let (_v, t) = t_open_bound tb in
-      add_id tables d t
-  | Tquant (_, tq) ->
-      let (_vl, _, t) = t_open_quant tq in
-      add_id tables d t
-  | Tbinop (_, t1, t2) ->
-      let tables = add_id tables d t1 in
-      add_id tables d t2
-  | Tnot (t) ->
-      add_id tables d t
-  | Tif (t1, t2, t3) ->
-      let tables = add_id tables d t1 in
-      let tables = add_id tables d t2 in
-      add_id tables d t3
-
 (* [add d printer tables] Adds all new declaration of symbol inside d to tables.
   It uses printer to give them a unique name and also register these new names in printer *)
-let add (d: decl) (tables: names_table): names_table =
+let add (d: decl) (tables: naming_table): naming_table =
   match d.d_node with
   | Dtype ty ->
       (* only current symbol is new in the declaration (see create_ty_decl) *)
@@ -181,22 +149,19 @@ let add (d: decl) (tables: names_table): names_table =
           ind_decl_add tables ind)
         tables
         il
-  | Dprop (_, pr, t) ->
+  | Dprop (_, pr, _t) ->
       (* Only pr is new in Dprop (see create_prop_decl) *)
       let id = pr.pr_name in
       let s = id_unique tables.printer id in
-      let tables = add_unsafe s (Pr pr) tables in
-      add_id tables d t
+      add_unsafe s (Pr pr) tables
 
-let build_name_tables task : names_table =
+let build_naming_tables task : naming_table =
   let pr = fresh_printer () in
   let km = Task.task_known task in
-  let empty_decls = Ident.Mid.empty in
   let tables = {
       namespace = empty_ns;
       known_map = km;
       printer = pr;
-      id_decl = empty_decls
   } in
 (*  We want conflicting names to be named as follows:
     names closer to the goal should be named with lowest
@@ -205,7 +170,6 @@ let build_name_tables task : names_table =
     added by the user are renamed on the fly. *)
   let l = Mid.fold (fun _id d acc -> d :: acc) km [] in
   List.fold_left (fun tables d -> add d tables) tables l
-
 
 (************* wrapper  *************)
 
@@ -219,6 +183,7 @@ type (_, _) trans_typ =
   | Ttrans_l    : ((task tlist), task list) trans_typ
   | Tenvtrans   : (Env.env -> (task trans), task) trans_typ
   | Tenvtrans_l : (Env.env -> (task tlist), task list) trans_typ
+  | Tstring     : ('a, 'b) trans_typ -> ((string -> 'a), 'b) trans_typ
   | Tint        : ('a, 'b) trans_typ -> ((int -> 'a), 'b) trans_typ
   | Tty         : ('a, 'b) trans_typ -> ((ty -> 'a), 'b) trans_typ
   | Ttysymbol   : ('a, 'b) trans_typ -> ((tysymbol -> 'a), 'b) trans_typ
@@ -227,33 +192,32 @@ type (_, _) trans_typ =
   | Tlsymbol    : ('a, 'b) trans_typ -> ((Term.lsymbol -> 'a), 'b) trans_typ
   | Tsymbol     : ('a, 'b) trans_typ -> ((symbol -> 'a), 'b) trans_typ
   | Tlist       : ('a, 'b) trans_typ -> ((symbol list -> 'a), 'b) trans_typ
+  | Tidentlist : ('a, 'b) trans_typ -> ((string list -> 'a), 'b) trans_typ
   | Tterm       : ('a, 'b) trans_typ -> ((term -> 'a), 'b) trans_typ
-  | Tstring     : ('a, 'b) trans_typ -> ((string -> 'a), 'b) trans_typ
   | Tformula    : ('a, 'b) trans_typ -> ((term -> 'a), 'b) trans_typ
   | Ttheory     : ('a, 'b) trans_typ -> ((Theory.theory -> 'a), 'b) trans_typ
   | Topt        : string * ('a -> 'c, 'b) trans_typ -> (('a option -> 'c), 'b) trans_typ
   | Toptbool    : string * ('a, 'b) trans_typ -> (bool -> 'a, 'b) trans_typ
 
-let find_pr s tables =
-  Mstr.find s tables.namespace.ns_pr
+let find_pr q tables =
+  Theory.ns_find_pr tables.namespace (Typing.string_list_of_qualid q)
 
-let find_ts s tables =
-  Mstr.find s tables.namespace.ns_ts
+let find_ts q tables =
+  Theory.ns_find_ts tables.namespace (Typing.string_list_of_qualid q)
 
-let find_ls s tables =
-  Mstr.find s tables.namespace.ns_ls
+let find_ls q tables =
+  Theory.ns_find_ls tables.namespace (Typing.string_list_of_qualid q)
 
-let find_symbol s tables =
-  try Tsprsymbol (find_pr s tables) with
+let find_symbol q tables =
+  try Tsprsymbol (find_pr q tables) with
         | Not_found ->
-          try Tslsymbol (find_ls s tables) with
+          try Tslsymbol (find_ls q tables) with
           | Not_found ->
-            try Tstysymbol (find_ts s tables) with
-            | Not_found -> raise (Arg_hyp_not_found s)
+            try Tstysymbol (find_ts q tables) with
+            | Not_found -> raise (Arg_qid_not_found q)
 
 
 let type_ptree ~as_fmla t tables =
-  (*let tables = build_name_tables task in*)
   let km = tables.known_map in
   let ns = tables.namespace in
   if as_fmla
@@ -275,9 +239,26 @@ let parse_and_type ~as_fmla s task =
   with
   | Loc.Located (loc, e) -> raise (Arg_parse_type_error (loc, s, e))
 
+let parse_qualid s =
+  try
+    let lb = Lexing.from_string s in
+    Lexer.parse_qualid lb
+  with
+  | Loc.Located (loc, e) -> raise (Arg_parse_type_error (loc, s, e))
+
+let parse_list_qualid s =
+  try
+    let lb = Lexing.from_string s in
+    Lexer.parse_list_qualid lb
+  with
+  | Loc.Located (loc, e) -> raise (Arg_parse_type_error (loc, s, e))
+
 let parse_list_ident s =
-  let lb = Lexing.from_string s in
-  Lexer.parse_list_ident lb
+  try
+    let lb = Lexing.from_string s in
+    Lexer.parse_list_ident lb
+  with
+  | Loc.Located (loc, e) -> raise (Arg_parse_type_error (loc, s, e))
 
 let parse_int s =
   try int_of_string s
@@ -322,6 +303,7 @@ let rec is_trans_typ_l: type a b. (a, b) trans_typ -> b trans_typ_is_l =
     | Tenvtrans_l    -> Yes
     | Ttrans_l       -> Yes
     | Tint t         -> is_trans_typ_l t
+    | Tstring t      -> is_trans_typ_l t
     | Tty t          -> is_trans_typ_l t
     | Ttysymbol t    -> is_trans_typ_l t
     | Tprsymbol t    -> is_trans_typ_l t
@@ -330,59 +312,61 @@ let rec is_trans_typ_l: type a b. (a, b) trans_typ -> b trans_typ_is_l =
     | Tsymbol t      -> is_trans_typ_l t
     | Tlist t        -> is_trans_typ_l t
     | Tterm t        -> is_trans_typ_l t
-    | Tstring t      -> is_trans_typ_l t
+    | Tidentlist t   -> is_trans_typ_l t
     | Tformula t     -> is_trans_typ_l t
     | Ttheory t      -> is_trans_typ_l t
     | Topt (_,t)     -> is_trans_typ_l t
     | Toptbool (_,t) -> is_trans_typ_l t
 
-let string_of_trans_typ : type a b. (a, b) trans_typ -> string =
+let rec string_of_trans_typ : type a b. (a, b) trans_typ -> string =
   fun t ->
     match t with
-    | Ttrans         -> "trans"
-    | Ttrans_l       -> "transl"
-    | Tenvtrans      -> "env trans"
-    | Tenvtrans_l    -> "env transl"
-    | Tint _         -> "integer"
-    | Tty _          -> "type"
-    | Ttysymbol _    -> "type symbol"
-    | Tprsymbol _    -> "prop symbol"
-    | Tprlist _      -> "list of prop symbol"
-    | Tlsymbol _     -> "logic symbol"
-    | Tsymbol _      -> "symbol"
-    | Tlist _        -> "list of prop symbol"
-    | Tterm _        -> "term"
+    | Ttrans         -> "task"
+    | Ttrans_l       -> "list task"
+    | Tenvtrans      -> "env -> task"
+    | Tenvtrans_l    -> "env -> list task"
+    | Tint _         -> "int"
     | Tstring _      -> "string"
+    | Tty _          -> "type"
+    | Ttysymbol _    -> "tysymbol"
+    | Tprsymbol _    -> "prsymbol"
+    | Tprlist _      -> "list prsymbol"
+    | Tlsymbol _     -> "lsymbol"
+    | Tsymbol _      -> "symbol"
+    | Tlist _        -> "list symbol"
+    | Tterm _        -> "term"
     | Tformula _     -> "formula"
+    | Tidentlist _   -> "list ident"
     | Ttheory _      -> "theory"
-    | Topt (s,_)     -> "opt [" ^ s ^ "]"
-    | Toptbool (s,_) -> "boolean opt [" ^ s ^ "]"
+    | Topt (s,t)     -> "?" ^ s ^ (string_of_trans_typ t)
+    | Toptbool (s,_) -> "?" ^ s ^ ":bool"
 
 let rec print_type : type a b. (a, b) trans_typ -> string =
   fun t ->
     match t with
-    | Ttrans         -> "()"
-    | Ttrans_l       -> "()"
-    | Tenvtrans      -> "()"
-    | Tenvtrans_l    -> "()"
+    | Ttrans         -> "task"
+    | Ttrans_l       -> "list task"
+    | Tenvtrans      -> "env -> task"
+    | Tenvtrans_l    -> "env -> list task"
     | Tint t         -> "integer -> " ^ print_type t
+    | Tstring t      -> "string -> " ^ print_type t
     | Tty t          -> "type -> " ^ print_type t
     | Ttysymbol t    -> "type_symbol -> " ^ print_type t
-    | Tprsymbol t    -> "prop_symbol -> " ^ print_type t
-    | Tprlist t      -> "prop_symbol list -> " ^ print_type t
-    | Tlsymbol t     -> "logic_symbol -> " ^ print_type t
+    | Tprsymbol t    -> "prsymbol -> " ^ print_type t
+    | Tprlist t      -> "list prsymbol -> " ^ print_type t
+    | Tlsymbol t     -> "lsymbol -> " ^ print_type t
     | Tsymbol t      -> "symbol -> " ^ print_type t
-    | Tlist t        -> "prop_symbol list -> " ^ print_type t
+    | Tlist t        -> "list symbol -> " ^ print_type t
     | Tterm t        -> "term -> " ^ print_type t
-    | Tstring t      -> "string -> " ^ print_type t
     | Tformula t     -> "formula -> " ^ print_type t
+    | Tidentlist t    -> "list ident -> " ^ print_type t
     | Ttheory t      -> "theory -> " ^ print_type t
-    | Topt (s,t)     -> "opt [" ^ s ^ "] " ^ print_type t
-    | Toptbool (s,t) -> "opt [" ^ s ^ "] -> " ^ print_type t
+    | Topt (s,t)     -> "?" ^ s ^ ":" ^ print_type t
+    | Toptbool (s,t) -> "?" ^ s ^ ":bool -> " ^ print_type t
 
 exception Unnecessary_arguments of string list
 
-let rec wrap_to_store : type a b. (a, b) trans_typ -> a -> string list -> Env.env -> names_table -> task -> b =
+let rec wrap_to_store : type a b. (a, b) trans_typ -> a -> string list -> Env.env -> naming_table -> task -> b =
   fun t f l env tables task ->
     match t, l with
     | Ttrans, []-> apply f task
@@ -395,6 +379,8 @@ let rec wrap_to_store : type a b. (a, b) trans_typ -> a -> string list -> Env.en
     | Tenvtrans_l, _ -> raise (Unnecessary_arguments l)
     | Tint t', s :: tail ->
       let arg = parse_int s in wrap_to_store t' (f arg) tail env tables task
+    | Tstring t', s :: tail ->
+       wrap_to_store t' (f s) tail env tables task
     | Tformula t', s :: tail ->
       let te = parse_and_type ~as_fmla:true s tables in
       wrap_to_store t' (f te) tail env tables task
@@ -408,62 +394,68 @@ let rec wrap_to_store : type a b. (a, b) trans_typ -> a -> string list -> Env.en
       let tys = Ty.ts_int in (* TODO: parsing + typing of s *)
       wrap_to_store t' (f tys) tail env tables task
     | Tprsymbol t', s :: tail ->
-      let pr = try (find_pr s tables) with
-               | Not_found -> raise (Arg_hyp_not_found s) in
+       let q = parse_qualid s in
+       let pr = try (find_pr q tables) with
+                | Not_found -> raise (Arg_qid_not_found q) in
       wrap_to_store t' (f pr) tail env tables task
     | Tprlist t', s :: tail ->
-        let pr_list = parse_list_ident s in
+        let pr_list = parse_list_qualid s in
         let pr_list =
         List.map (fun id ->
-                    try find_pr id.Ptree.id_str tables with
-                    | Not_found -> raise (Arg_hyp_not_found s))
+                    try find_pr id tables with
+                    | Not_found -> raise (Arg_qid_not_found id))
                  pr_list in
         wrap_to_store t' (f pr_list) tail env tables task
     | Tlsymbol t', s :: tail ->
-      let pr = try (find_ls s tables) with
-               | Not_found -> raise (Arg_hyp_not_found s) in
+       let q = parse_qualid s in
+       let pr = try (find_ls q tables) with
+               | Not_found -> raise (Arg_qid_not_found q) in
       wrap_to_store t' (f pr) tail env tables task
     | Tsymbol t', s :: tail ->
-      let symbol = find_symbol s tables in
-      wrap_to_store t' (f symbol) tail env tables task
+       let q = parse_qualid s in
+       let symbol = find_symbol q tables in
+       wrap_to_store t' (f symbol) tail env tables task
     | Tlist t', s :: tail ->
-      let pr_list = parse_list_ident s in
-      let pr_list =
-        List.map (fun id -> find_symbol id.Ptree.id_str tables) pr_list in
-      wrap_to_store t' (f pr_list) tail env tables task
+       let pr_list = parse_list_qualid s in
+       let pr_list =
+         List.map (fun id -> find_symbol id tables) pr_list in
+       wrap_to_store t' (f pr_list) tail env tables task
     | Ttheory t', s :: tail ->
-      let th = parse_theory env s in
-      wrap_to_store t' (f th) tail env tables task
-    | Tstring t', s :: tail ->
-      wrap_to_store t' (f s) tail env tables task
+       let th = parse_theory env s in
+       wrap_to_store t' (f th) tail env tables task
+    | Tidentlist t', s :: tail ->
+       let list = List.map (fun id -> id.Ptree.id_str) (parse_list_ident s) in
+       wrap_to_store t' (f list) tail env tables task
     | Topt (optname, t'), s :: s' :: tail when s = optname ->
-      begin match t' with
+       begin match t' with
         | Tint t' ->
           let arg = Some (parse_int s') in
           wrap_to_store t' (f arg) tail env tables task
         | Tprsymbol t' ->
-          let arg = try Some (find_pr s' tables) with
-                    | Not_found -> raise (Arg_hyp_not_found s') in
+           let q = parse_qualid s' in
+           let arg = try Some (find_pr q tables) with
+                    | Not_found -> raise (Arg_qid_not_found q) in
           wrap_to_store t' (f arg) tail env tables task
         | Tsymbol t' ->
-          let arg = Some (find_symbol s' tables) in
-          wrap_to_store t' (f arg) tail env tables task
+           let q = parse_qualid s' in
+           let arg = Some (find_symbol q tables) in
+           wrap_to_store t' (f arg) tail env tables task
         | Tformula t' ->
-          let arg = Some (parse_and_type ~as_fmla:true s' tables) in
-          wrap_to_store t' (f arg) tail env tables task
+           let arg = Some (parse_and_type ~as_fmla:true s' tables) in
+           wrap_to_store t' (f arg) tail env tables task
         | Tterm t' ->
-          let arg = Some (parse_and_type ~as_fmla:false s' tables) in
-          wrap_to_store t' (f arg) tail env tables task
+           let arg = Some (parse_and_type ~as_fmla:false s' tables) in
+           wrap_to_store t' (f arg) tail env tables task
         | Ttheory t' ->
-          let arg = Some (parse_theory env s') in
-          wrap_to_store t' (f arg) tail env tables task
+           let arg = Some (parse_theory env s') in
+           wrap_to_store t' (f arg) tail env tables task
         | Tstring t' ->
-          let arg = Some s' in
-          wrap_to_store t' (f arg) tail env tables task
+           let arg = Some s' in
+           wrap_to_store t' (f arg) tail env tables task
         | _ -> raise (Arg_expected (string_of_trans_typ t', s'))
-      end
+       end
     | Topt (_, t'), _ ->
-      wrap_to_store (trans_typ_tail t') (f None) l env tables task
+       wrap_to_store (trans_typ_tail t') (f None) l env tables task
     | Toptbool (optname, t'), s :: tail when s = optname ->
       wrap_to_store t' (f true) tail env tables task
     | Toptbool (_, t'), _ ->
@@ -476,7 +468,8 @@ let wrap_l : type a. (a, task list) trans_typ -> a -> trans_with_args_l =
 let wrap   : type a. (a, task) trans_typ -> a -> trans_with_args =
   fun t f l env tables -> Trans.store (wrap_to_store t f l env tables)
 
-let wrap_any : type a b. (a, b) trans_typ -> a -> string list -> Env.env -> Task.names_table -> b trans =
+let wrap_any : type a b. (a, b) trans_typ -> a -> string list -> Env.env ->
+                    Trans.naming_table -> b trans =
   fun t f l env tables -> Trans.store (wrap_to_store t f l env tables)
 
 let wrap_and_register : type a b. desc:Pp.formatted -> string -> (a, b) trans_typ -> a -> unit =
@@ -488,3 +481,6 @@ let wrap_and_register : type a b. desc:Pp.formatted -> string -> (a, b) trans_ty
       Trans.register_transform_with_args_l ~desc:(type_desc ^^ desc) name trans
     | No ->
       Trans.register_transform_with_args ~desc:(type_desc ^^ desc) name trans
+
+
+let find_symbol s tables = find_symbol (parse_qualid s) tables

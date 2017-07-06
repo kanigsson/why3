@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 let debug = Debug.register_flag ~desc:"ITP server" "itp_server"
 
 let has_extension f =
@@ -126,10 +137,11 @@ let list_provers cont _args =
   Pp.sprintf "%a" (Pp.print_list Pp.newline Pp.string) l
 
 
-let find_any_id nt s =
-  try (Stdlib.Mstr.find s nt.Theory.ns_pr).Decl.pr_name with
-  | Not_found -> try (Stdlib.Mstr.find s nt.Theory.ns_ls).Term.ls_name with
-    | Not_found -> (Stdlib.Mstr.find s nt.Theory.ns_ts).Ty.ts_name
+let symbol_name s =
+  match s with
+  | Args_wrapper.Tstysymbol ts -> ts.Ty.ts_name
+  | Args_wrapper.Tsprsymbol pr -> pr.Decl.pr_name
+  | Args_wrapper.Tslsymbol ls -> ls.Term.ls_name
 
 (* The id you are trying to use is undefined *)
 exception Undefined_id of string
@@ -138,26 +150,69 @@ exception Number_of_arguments
 
 let print_id s tables =
   (* let tables = Args_wrapper.build_name_tables task in*)
-  let km = tables.Task.known_map in
-  let id = try find_any_id tables.Task.namespace s with
+  let km = tables.Trans.known_map in
+  let id = try Args_wrapper.find_symbol s tables with
   | Not_found -> raise (Undefined_id s) in
   let d =
-    try Ident.Mid.find id km with
+    try Ident.Mid.find (symbol_name id) km with
     | Not_found -> raise Not_found (* Should not happen *)
   in
   Pp.string_of (Why3printer.print_decl tables) d
 
+
+
+(* searching ids in declarations *)
+
+let occurs_in_type id = Ty.ty_s_any (fun ts -> Ident.id_equal ts.Ty.ts_name id)
+
+let occurs_in_term id =
+  Term.t_s_any (occurs_in_type id) (fun ls -> Ident.id_equal id ls.Term.ls_name)
+
+let occurs_in_constructor id (cs,projs) =
+  Ident.id_equal cs.Term.ls_name id ||
+    List.exists (function Some ls -> Ident.id_equal ls.Term.ls_name id | None -> false) projs
+
+let occurs_in_defn id (ls,def) =
+  Ident.id_equal ls.Term.ls_name id ||
+  let (_vl,t) = Decl.open_ls_defn def in occurs_in_term id t
+
+let occurs_in_ind_decl id (_,clauses) =
+  List.exists (fun (_,t) -> occurs_in_term id t) clauses
+
+let occurs_in_decl d id =
+  Decl.(match d.d_node with
+  | Decl.Dtype ts -> Ident.id_equal ts.Ty.ts_name id (* look through ts.ys_def *)
+  | Decl.Ddata dl ->
+      List.exists
+        (fun ((ts,c): data_decl) ->
+         Ident.id_equal ts.Ty.ts_name id || List.exists (occurs_in_constructor id) c)
+        dl
+  | Decl.Dparam ls -> Ident.id_equal ls.Term.ls_name id
+  | Decl.Dlogic dl -> List.exists (occurs_in_defn id) dl
+  | Decl.Dind (_, il) -> List.exists (occurs_in_ind_decl id) il
+  | Dprop ((Paxiom|Plemma), pr, t) -> Ident.id_equal pr.pr_name id || occurs_in_term id t
+  | Dprop _ -> false)
+
+let do_search km idl =
+  Ident.Mid.fold
+    (fun _ d acc ->
+     if List.for_all (occurs_in_decl d) idl then Decl.Sdecl.add d acc else acc) km Decl.Sdecl.empty
+
 let search s tables =
-  (*let tables = Args_wrapper.build_name_tables task in*)
-  let id_decl = tables.Task.id_decl in
-  let id = try find_any_id tables.Task.namespace s with
-  | Not_found -> raise (Undefined_id s) in
-  let l =
-    try Ident.Mid.find id id_decl with
-    | Not_found -> raise Not_found (* Should not happen *)
+  let ids = List.rev_map
+              (fun s -> try symbol_name (Args_wrapper.find_symbol s tables)
+                        with Args_wrapper.Arg_parse_type_error _ |
+                             Args_wrapper.Arg_qid_not_found _ -> raise (Undefined_id s)) s
   in
-  let s_id = print_id s tables in
-  s_id ^ (Pp.string_of (Pp.print_list Pp.newline2 (Why3printer.print_decl tables)) l)
+  let l = do_search tables.Trans.known_map ids in
+  if Decl.Sdecl.is_empty l then
+       Pp.sprintf
+         "No declaration contain all the %d identifiers @[%a@]"
+         (List.length ids)
+         (Pp.print_list Pp.space (fun fmt id -> Pp.string fmt id.Ident.id_string))
+         ids
+    else let l = Decl.Sdecl.elements l in
+         Pp.string_of (Pp.print_list Pp.newline2 (Why3printer.print_decl tables)) l
 
 let print_id _cont task args =
   match args with
@@ -166,12 +221,12 @@ let print_id _cont task args =
 
 let search_id _cont task args =
   match args with
-  | [s] -> search s task
-  | _ -> raise Number_of_arguments
+  | [] -> raise Number_of_arguments
+  | _ -> search args task
 
 type query =
   | Qnotask of (Controller_itp.controller -> string list -> string)
-  | Qtask of (Controller_itp.controller -> Task.names_table -> string list -> string)
+  | Qtask of (Controller_itp.controller -> Trans.naming_table -> string list -> string)
 
 let help_on_queries fmt commands =
   let l = Stdlib.Hstr.fold (fun c (h,_) acc -> (c,h)::acc) commands [] in
@@ -333,7 +388,7 @@ let interp commands_table config cont id s =
     | Qtask _, None -> QError "please select a goal first"
     | Qtask f, Some id ->
        let table = match Session_itp.get_table cont.Controller_itp.controller_session id with
-       | None -> raise (Task.Bad_name_table "Server_utils.interp")
+       | None -> raise (Trans.Bad_name_table "Server_utils.interp")
        | Some table -> table in
        let s = try Query (f cont table args) with
        | Undefined_id s -> QError ("No existing id corresponding to " ^ s)

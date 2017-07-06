@@ -1,3 +1,13 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
 
 
 
@@ -48,7 +58,7 @@ type proof_node = {
   proofn_name                    : Ident.ident;
   proofn_expl                    : string;
   proofn_task                    : Task.task;
-  proofn_table                   : Task.names_table option;
+  proofn_table                   : Trans.naming_table option;
   proofn_parent                  : proof_parent;
   proofn_checksum                : Termcode.checksum option;
   proofn_shape                   : Termcode.shape;
@@ -531,7 +541,7 @@ let graft_proof_attempt ?file (s : session) (id : proofNodeID) (pr : Whyconf.pro
    of proofNodeID [id] of parent [p] of task [t] *)
 let mk_proof_node ~version ~expl (s : session) (n : Ident.ident) (t : Task.task)
     (parent : proof_parent) (node_id : proofNodeID) =
-  let tables = Args_wrapper.build_name_tables t in
+  let tables = Args_wrapper.build_naming_tables t in
   let sum = Some (Termcode.task_checksum ~version t) in
   let shape = Termcode.t_shape_task ~version ~expl t in
   let pn = { proofn_name = n;
@@ -1358,7 +1368,7 @@ let add_registered_transformation s env old_tr goal_id =
     Debug.dprintf debug "[merge_theory] trans not found@.";
     let task = goal.proofn_task in
     let tables = match goal.proofn_table with
-    | None -> raise (Task.Bad_name_table "Session_itp.add_registered_transformation")
+    | None -> raise (Trans.Bad_name_table "Session_itp.add_registered_transformation")
     | Some tables -> tables in
     let subgoals = Trans.apply_transform_args old_tr.transf_name env old_tr.transf_args tables task in
     graft_transf s goal_id old_tr.transf_name old_tr.transf_args subgoals

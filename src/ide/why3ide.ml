@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 open Why3
 open Format
 open Gconfig
@@ -65,7 +76,7 @@ module Protocol_why3ide = struct
   let get_requests () =
     let n = List.length !list_requests in
     if n > 0 then
-      Debug.dprintf debug_proto "[IDE proto] got %d newrequests@." n;
+      Debug.dprintf debug_proto "[IDE proto] got %d new requests@." n;
     let l = List.rev !list_requests in
     list_requests := [];
     l
@@ -1124,7 +1135,8 @@ let on_selected_row r =
       if detached then
         task_view#source_buffer#set_text ""
       else
-        send_request (Get_task id)
+        let b = gconfig.intro_premises in
+        send_request (Get_task(id,b))
     | NProofAttempt ->
       let (pa, _obs, _l) = Hint.find node_id_pa id in
       (match pa with
@@ -1144,7 +1156,9 @@ let on_selected_row r =
           task_view#source_buffer#set_text "Internal failure"
       | Controller_itp.Uninstalled _p ->
           task_view#source_buffer#set_text "Uninstalled")
-    | _ -> send_request (Get_task id)
+    | _ ->
+       let b = gconfig.intro_premises in
+       send_request (Get_task(id,b))
   with
     | Not_found -> task_view#source_buffer#set_text ""
 
@@ -1646,11 +1660,10 @@ let treat_notification n =
                   with Not_found ->
                     Debug.dprintf debug "Warning: no gtk row registered for node %d@." id
                 end
-              else
-                (* Trying to move cursor on first unproven goal around on all cases
-              but not when proofAttempt is updated because ad hoc debugging. *)
-                send_request (Get_first_unproven_node id)
-            end
+            end;
+              (* Trying to move cursor on first unproven goal around on all cases
+                 but not when proofAttempt is updated because ad hoc debugging. *)
+              send_request (Get_first_unproven_node id)
        | Proof_status_change (pa, obs, l) ->
           let r = get_node_row id in
           Hint.replace node_id_pa id (pa, obs, l);

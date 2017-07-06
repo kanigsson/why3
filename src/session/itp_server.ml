@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 open Format
 open Stdlib
 open Session_itp
@@ -73,49 +84,49 @@ let loaded_strategies = ref []
 
 let print_term s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_term tables fmt t
 
 let print_type s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_ty tables fmt t
 
 let print_ts s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_ts tables fmt t
 
 let print_ls s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_ls tables fmt t
 
 let print_tv s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_tv tables fmt t
 
 let print_vsty s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_forget_vsty tables fmt t
 
 let print_pr s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_pr tables fmt t
 
 let print_pat s id fmt t =
   let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_name_tables (Session_itp.get_task s id)
+  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
   Why3printer.print_pat tables fmt t
 
@@ -233,8 +244,10 @@ let get_exception_message ses id e =
         (print_term ses id) t1 (print_term ses id) t2, Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans (s) ->
       Pp.sprintf "Error in transformation function: %s \n" s, Loc.dummy_position, ""
-  | Args_wrapper.Arg_hyp_not_found (s) ->
-      Pp.sprintf "Following hypothesis was not found: %s \n" s, Loc.dummy_position, ""
+  | Args_wrapper.Arg_qid_not_found q ->
+      Pp.sprintf "Following hypothesis was not found: %a \n" Typing.print_qualid q, Loc.dummy_position, ""
+  | Args_wrapper.Arg_error s ->
+      Pp.sprintf "Transformation raised a general error: %s \n" s, Loc.dummy_position, ""
   | Args_wrapper.Arg_theory_not_found (s) ->
       Pp.sprintf "Theory not found: %s" s, Loc.dummy_position, ""
   | Args_wrapper.Arg_parse_type_error(loc, arg, e) ->
@@ -263,7 +276,7 @@ let print_request fmt r =
   | Set_max_tasks_req i             -> fprintf fmt "set max tasks %i" i
   | Get_file_contents _f            -> fprintf fmt "get file contents"
   | Get_first_unproven_node _nid    -> fprintf fmt "get first unproven node"
-  | Get_task _nid                   -> fprintf fmt "get task"
+  | Get_task(nid,b)                 -> fprintf fmt "get task(%d,%b)" nid b
   | Focus_req _nid                  -> fprintf fmt "focus"
   | Unfocus_req                     -> fprintf fmt "unfocus"
   | Remove_subtree _nid             -> fprintf fmt "remove subtree"
@@ -368,7 +381,7 @@ let () =
 *)
     "print", "<id> print the declaration where <id> was defined",
     Qtask print_id;
-    "search", "<is> print declarations where <id> appears",
+    "search", "<ids> print the declarations where all <ids> appears",
     Qtask search_id;
 (*
     "r", "reload the session (test only)", test_reload;
@@ -884,22 +897,21 @@ end
       get_node_proved node_id any in
     iter_the_files send_node root_node
 
-
   (* -- send the task -- *)
-  let task_of_id d id =
+  let task_of_id d id do_intros =
     let task = get_task d.cont.controller_session id in
     let tables = get_table d.cont.controller_session id in
     (* This function also send source locations associated to the task *)
     let loc_color_list = get_locations task in
     Pp.string_of
-      (Driver.print_task ~cntexample:false ?name_table:tables d.task_driver)
+      (Driver.print_task ~cntexample:false ?name_table:tables ~do_intros d.task_driver)
       task, loc_color_list
 
-  let send_task nid =
+  let send_task nid do_intros =
     let d = get_server_data () in
     match any_from_node_ID nid with
     | APn id ->
-       let s, list_loc = task_of_id d id in
+       let s, list_loc = task_of_id d id do_intros in
        P.notify (Task (nid, s, list_loc))
     | ATh t ->
        P.notify (Task (nid, "Theory " ^ (theory_name t).Ident.id_string, []))
@@ -907,7 +919,7 @@ end
        let pa = get_proof_attempt_node  d.cont.controller_session pid in
        let parid = pa.parent in
        let name = Pp.string_of Whyconf.print_prover pa.prover in
-       let s, list_loc = task_of_id d parid in
+       let s, list_loc = task_of_id d parid do_intros in
        P.notify (Task (nid,s ^ "\n====================> Prover: " ^ name ^ "\n", list_loc))
     | AFile f ->
        P.notify (Task (nid, "File " ^ file_name f, []))
@@ -915,7 +927,7 @@ end
        let name = get_transf_name d.cont.controller_session tid in
        let args = get_transf_args d.cont.controller_session tid in
        let parid = get_trans_parent d.cont.controller_session tid in
-       let s, list_loc = task_of_id d parid in
+       let s, list_loc = task_of_id d parid do_intros in
        P.notify (Task (nid, s ^ "\n====================> Transformation: " ^ String.concat " " (name :: args) ^ "\n", list_loc))
 
   (* -------------------- *)
@@ -1289,7 +1301,7 @@ end
     | Mark_obsolete_req n          -> mark_obsolete n
     | Save_file_req (name, text)   ->
         save_file name text;
-    | Get_task nid                 -> send_task nid
+    | Get_task(nid,b)              -> send_task nid b
     | Replay_req                   -> replay_session ()
     | Interrupt_req                -> C.interrupt ()
     | Command_req (nid, cmd)       ->

@@ -1,3 +1,13 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
 
 
 val get_session_dir : allow_mkdir:bool -> string Queue.t -> string
@@ -24,11 +34,11 @@ exception Number_of_arguments
 
 type query =
   | Qnotask of (Controller_itp.controller -> string list -> string)
-  | Qtask of (Controller_itp.controller -> Task.names_table -> string list -> string)
+  | Qtask of (Controller_itp.controller -> Trans.naming_table -> string list -> string)
 
 
-val print_id: 'a -> Task.names_table -> string list -> string
-val search_id: 'a -> Task.names_table -> string list -> string
+val print_id: 'a -> Trans.naming_table -> string list -> string
+val search_id: 'a -> Trans.naming_table -> string list -> string
 
 val list_provers: Controller_itp.controller -> _ -> string
 val list_transforms: unit -> (string * Pp.formatted) list

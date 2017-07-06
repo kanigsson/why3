@@ -1,3 +1,14 @@
+(********************************************************************)
+(*                                                                  *)
+(*  The Why3 Verification Platform   /   The Why3 Development Team  *)
+(*  Copyright 2010-2017   --   INRIA - CNRS - Paris-Sud University  *)
+(*                                                                  *)
+(*  This software is distributed under the terms of the GNU Lesser  *)
+(*  General Public License version 2.1, with the special exception  *)
+(*  on linking described in file LICENSE.                           *)
+(*                                                                  *)
+(********************************************************************)
+
 (* TODO
   - detached theories
   - obsolete
@@ -336,12 +347,17 @@ let interp _chout fmt cmd =
   begin
     match l with
     | ["goto"; n] when int_of_string n < !max_ID ->
-        cur_id := int_of_string n; send_request (Get_task !cur_id); print_session fmt
+        cur_id := int_of_string n;
+        let b = false (* TODO: allow user to customize printing with intros or not *) in
+        send_request (Get_task(!cur_id,b));
+        print_session fmt
     | _ ->
         begin
           match cmd with
           | "ng" -> cur_id := (!cur_id + 1) mod !max_ID; print_session fmt
-          | "g" -> send_request (Get_task !cur_id)
+          | "g" ->
+             let b = false (* TODO: allow user to customize printing with intros or not *) in
+             send_request (Get_task(!cur_id,b))
           | "p" -> print_session fmt
           | _ -> send_request (Command_req (!cur_id, cmd))
         end
