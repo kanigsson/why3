@@ -345,12 +345,6 @@ type naming_table = {
 
 exception Bad_name_table of string
 
-let empty_naming_table = {
-    namespace = empty_ns;
-    known_map = Ident.Mid.empty;
-    printer = Ident.create_ident_printer [];
-  }
-
 type trans_with_args = string list -> Env.env -> naming_table -> task trans
 type trans_with_args_l = string list -> Env.env -> naming_table -> task tlist
 
