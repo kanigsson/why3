@@ -413,6 +413,7 @@ let subsubgoals s (g: goal_id) =
   let transf = Session_itp.get_transformations s g in
   match transf with
   | [transf] -> Session_itp.get_sub_tasks s transf
+  | [] -> []
   | _ -> assert false
 
 
@@ -453,6 +454,7 @@ let further_split (c: Controller_itp.controller) (goal: goal_id) =
               with Not_found -> ())
            end
          | Controller_itp.TSscheduled  -> ()
+         | Controller_itp.TSfailed _ -> () (* TODO *)
          | _ -> failwith "TODO"
        in
        (* Pass empty function for notification as there is no IDE to update *)
@@ -492,7 +494,10 @@ let register_result c goal result =
            if is_full_split_goal c.Controller_itp.controller_session goal then
              unproved_vc_continue obj obj_rec
            else
-           let new_goals = further_split c goal; subsubgoals c.Controller_itp.controller_session goal in
+           let new_goals =
+             further_split c goal;
+             subsubgoals c.Controller_itp.controller_session goal
+           in
            if new_goals = [] then unproved_vc_continue obj obj_rec
            else begin
              (* if we are here, it means we have simplified the goal. We add the
