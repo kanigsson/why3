@@ -304,6 +304,14 @@ let prover_driver env base_prover =
     Gnat_util.abort_with_message ~internal:true s
 *)
 
+(* we slightly change the config so that drivers files are referenced
+   with the right prefix. *)
+let get_gnatprove_config config =
+  let transform_driver (base_prover: Whyconf.config_prover) =
+    {base_prover with Whyconf.driver = find_driver_file base_prover.Whyconf.driver} in
+  Whyconf.set_provers config
+    (Whyconf.Mprover.map transform_driver (Whyconf.get_provers config))
+
 (* Depending on what kinds of provers are requested, environment loading is a
  * bit different, hence we do this all together here *)
 
@@ -317,17 +325,10 @@ let provers, prover_ce, config, env =
         or if the option --prover was given, with a non-builtin prover *)
      try
        let gnatprove_config =
-         Whyconf.read_config (Some (gnatprove_why3conf_file ())) in
-       (* we slightly change the config so that drivers files are referenced
-          with the right prefix. *)
-       let gnatprove_config =
-         let transform_driver (base_prover: Whyconf.config_prover) =
-           {base_prover with Whyconf.driver = find_driver_file base_prover.Whyconf.driver} in
-         Whyconf.set_provers gnatprove_config
-           (Whyconf.Mprover.map transform_driver (Whyconf.get_provers gnatprove_config)) in
+         get_gnatprove_config (Whyconf.read_config (Some (gnatprove_why3conf_file ()))) in
        if not !opt_replay && builtin_provers_only then gnatprove_config
-        else begin
-           let conf = (Whyconf.read_config !opt_why3_conf_file) in
+       else begin
+           let conf = get_gnatprove_config (Whyconf.read_config !opt_why3_conf_file) in
            let provers =
              prover_merge
                (Whyconf.get_provers gnatprove_config)
