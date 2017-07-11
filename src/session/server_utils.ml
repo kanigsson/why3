@@ -348,29 +348,45 @@ type command =
   | QError       of string
   | Other        of string * string list
 
-let interp_others commands_table config cmd args =
+let interp_others commands_table config id cmd args =
   match parse_prover_name config cmd args with
   | Some (prover_config, limit) ->
-      if prover_config.Whyconf.interactive then
-        Edit (prover_config)
+      if id = None then
+        QError ("Please select a valid node id")
       else
-        Prove (prover_config, limit)
+        if prover_config.Whyconf.interactive then
+          Edit (prover_config)
+        else
+          Prove (prover_config, limit)
   | None ->
-      match cmd with
-      | "auto" ->
-          let s =
-            match args with
-            | "2"::_ -> "2"
-            | _ -> "1"
+      match cmd, args with
+      | "auto", _ ->
+          if id = None then
+            QError ("Please select a valid node id")
+          else
+            let s =
+              match args with
+              | "2"::_ -> "2"
+              | _ -> "1"
+            in
+            Strategies s
+      | "help", [trans] ->
+          let print_trans_desc fmt r =
+            Format.fprintf fmt "@[%s:\n%a@]" trans Pp.formatted r
           in
-          Strategies s
-      | "help" ->
+          (try
+            let desc = Trans.lookup_trans_desc trans in
+            Help_message (Pp.string_of print_trans_desc desc)
+          with
+          | Not_found -> QError (Pp.sprintf "Transformation %s does not exists" trans))
+      | "help", _ ->
           let text = Pp.sprintf
                           "Please type a command among the following (automatic completion available)@\n\
                            @\n\
                            @ <transformation name> [arguments]@\n\
                            @ <prover name> [<time limit> [<mem limit>]]@\n\
                            @ <query> [arguments]@\n\
+                           @ <help transformation_name> @\n\
                            @ auto [auto level]@\n\
                            @\n\
                            Available queries are:@\n@[%a@]" help_on_queries commands_table
@@ -395,15 +411,18 @@ let interp commands_table config cont id s =
        | Number_of_arguments -> QError "Bad number of arguments"
        in s
   with Not_found ->
-    try
+    let t =
+      try Some (Trans.lookup_trans cont.Controller_itp.controller_env cmd) with
+      | Trans.UnknownTrans _ -> None
+    in
+    match t with
+    | Some t ->
       if id = None then
         QError ("Please select a valid node id")
       else
-        let t = Trans.lookup_trans cont.Controller_itp.controller_env cmd in
         Transform (cmd,t,args)
-    with Trans.UnknownTrans _ ->
-      interp_others commands_table config cmd args
-
+    | None ->
+      interp_others commands_table config id cmd args
 
 (***********************)
 (* First Unproven goal *)
