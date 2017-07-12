@@ -181,8 +181,6 @@ let () =
         (check.Gnat_expl.reason = Gnat_expl.get_reason expl)
         && (Gnat_loc.equal_orig_loc check.Gnat_expl.sloc (Gnat_expl.get_loc expl))
       in
-      (* TODO maybe it would be more stable if we do not save the reference globally like this *)
-      Server.focused_node := Server.Wait_focus;
       Server.register_label_detection f
   (* TODO None and _ cases should be exit with errors *)
   | None -> ()
