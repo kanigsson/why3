@@ -803,19 +803,15 @@ let add_to_stat prover pr stat =
           (Mstr.add "transformations" (transformations_to_json session g) s))
    and proof_attempts_to_json session g =
      let s = Mstr.empty in
-     let save = ref 0 in
      let r = Whyconf.Hprover.fold
          (fun prover paid acc ->
            let pa = Session_itp.get_proof_attempt_node session paid in
            let pr_name = prover.Whyconf.prover_name in
-           save := 1;
            match pa.Session_itp.proof_obsolete, pa.Session_itp.proof_state with
            | false, Some pr ->
                Mstr.add pr_name (proof_result_to_json pr) acc
            | _, _ -> acc)
          (Session_itp.get_proof_attempt_ids session g) s in
-     if Mstr.is_empty r && !save = 0 then
-       Format.eprintf "%s@." (Session_itp.get_proof_expl session g);
      Json_base.Record r
 
    and proof_result_to_json r =
