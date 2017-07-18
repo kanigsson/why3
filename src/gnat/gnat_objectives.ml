@@ -803,13 +803,19 @@ let add_to_stat prover pr stat =
           (Mstr.add "transformations" (transformations_to_json session g) s))
    and proof_attempts_to_json session g =
      let s = Mstr.empty in
-     let r = Whyconf.Hprover.fold (fun prover paid acc ->
-         let pa = Session_itp.get_proof_attempt_node session paid in
-         let pr_name = prover.Whyconf.prover_name in
-         match pa.Session_itp.proof_obsolete, pa.Session_itp.proof_state with
-         | false, Some pr ->
-           Mstr.add pr_name (proof_result_to_json pr) acc
-         | _, _ -> acc) (Session_itp.get_proof_attempt_ids session g) s in
+     let save = ref 0 in
+     let r = Whyconf.Hprover.fold
+         (fun prover paid acc ->
+           let pa = Session_itp.get_proof_attempt_node session paid in
+           let pr_name = prover.Whyconf.prover_name in
+           save := 1;
+           match pa.Session_itp.proof_obsolete, pa.Session_itp.proof_state with
+           | false, Some pr ->
+               Mstr.add pr_name (proof_result_to_json pr) acc
+           | _, _ -> acc)
+         (Session_itp.get_proof_attempt_ids session g) s in
+     if Mstr.is_empty r && !save = 0 then
+       Format.eprintf "%s@." (Session_itp.get_proof_expl session g);
      Json_base.Record r
 
    and proof_result_to_json r =
@@ -875,7 +881,6 @@ let run_goal ~cntexample ?limit ~callback c prover g =
   C.schedule_proof_attempt
     ~counterexmp:cntexample ~limit ~callback
     ~notification c g prover
-(* TODO end Gnat_sched *)
 
 let goal_has_splits session (goal: goal_id) =
   let goal_transformations = Session_itp.get_transformations session goal in
@@ -917,7 +922,7 @@ let clean_automatic_proofs c =
 
 
 let all_split_leaf_goals () =
-  ()
+  assert false (* TODO *)
   (* ??? disabled for now *)
 (*
   iter_main_goals (fun g ->
@@ -962,12 +967,11 @@ let finished_but_not_valid_or_unedited pa =
       | _ -> true
     end
 
-(* TODO unused
+(* TODO replay *)
 let is_valid_pa pa =
   match pa.Session_itp.proof_state with
   | Some pr when pr.Call_provers.pr_answer = Call_provers.Valid -> true
   | _ -> false
-*)
 
 (* exception Goal_Found of goal *)
 exception PA_Found of Session_itp.proofAttemptID
@@ -1015,16 +1019,14 @@ let session_find_unproved_pa c obj =
    with PA_Found p ->
      Some p
 
-(* TODO unused !?
+(* TODO replay ? *)
 let compute_replay_limit_from_pas pas =
   match pas with
   | { Call_provers.pr_steps = steps } ->
     let steps = steps + steps / 10 + 1 in
     { Call_provers.empty_limit with
       Call_provers.limit_steps = steps }
-*)
 
-(* TODO unused
 let for_some_proof_attempt pred map =
   try
     List.iter (fun pa -> if pred pa then raise Exit else ()) map;
@@ -1036,72 +1038,70 @@ let for_some_transformation pred map =
     List.iter (fun tf -> if pred tf then raise Exit else ()) map;
     false
   with Exit -> true
-*)
 
-(* TODO unused
-let rec is_obsolete_verified c goal =
-  let session = c.Controller_itp.controller_session in
+let rec is_obsolete_verified session goal =
   (* Check if a goal is or was verified, including using obsolete proofs *)
-  Controller_itp.pn_proved c goal ||
+  Session_itp.pn_proved session goal ||
   for_some_proof_attempt is_valid_pa (Session_itp.get_proof_attempts session goal) ||
     for_some_transformation
-    (fun tf -> List.for_all (is_obsolete_verified c) (Session_itp.get_sub_tasks session tf))
+    (fun tf -> List.for_all (is_obsolete_verified session) (Session_itp.get_sub_tasks session tf))
     (Session_itp.get_transformations session goal)
-*)
 
-(* TODO I am not sure replay will be needed
 let rec replay_transf c tf =
   let session = c.Controller_itp.controller_session in
-  let tf_proves_goal = Controller_itp.tn_proved c tf in
+(* TODO do we want to redo the transformations here ? *)
+  let tf_proves_goal = Session_itp.tn_proved session tf in
   if tf_proves_goal then List.iter (replay_goal c) (Session_itp.get_sub_tasks session tf)
   else ()
 
 and replay_goal c goal =
-  if not (is_obsolete_verified c goal) then ()
+  let session = c.Controller_itp.controller_session in
+  if not (is_obsolete_verified session goal) then ()
   else
     try
       (* first try to find a proof_attempt that proves this goal entirely. This
        * will raise PA_Found if such a PA is found. *)
 
 (* TODO this should be in controller *)
-      let s = c.Controller_itp.controller_session in
-      let proof_attempt_ids = Session_itp.get_proof_attempt_ids s goal in
+      let proof_attempt_ids = Session_itp.get_proof_attempt_ids session goal in
       Whyconf.Hprover.iter (fun prover paid ->
-        let pa = Session_itp.get_proof_attempt_node s paid in
+        let pa = Session_itp.get_proof_attempt_node session paid in
         if is_valid_pa pa then raise (PA_Found paid)) proof_attempt_ids;
       (* we go here only if no such PA was found. We now replay the
          transformations *)
 
-      Session.iter_goal nothing (replay_transf) nothing goal
+      let transforms = Session_itp.get_transformations session goal in
+      List.iter (replay_transf c) transforms
+      (*Session.iter_goal nothing (replay_transf) nothing goal*)
     with PA_Found pa ->
+      let pa_prover =
+        (Session_itp.get_proof_attempt_node session pa).Session_itp.prover in
       let prover =
         try
-          Some (
-          List.find (fun p ->
-            p.Session.prover_config.Whyconf.prover = pa.Session.proof_prover)
-            Gnat_config.provers)
+          Some (List.find (fun p -> p = pa_prover) Gnat_config.provers)
         with Not_found ->
           Gnat_report.add_warning
           ("could not replay goal due to missing prover " ^
-            pa.Session.proof_prover.Whyconf.prover_name);
+            pa_prover.Whyconf.prover_name);
           None in
       Opt.iter (fun prover ->
+          let pa_node = Session_itp.get_proof_attempt_node session pa in
           let limit =
-            match pa.Session.proof_state with
-            | Session.Done pas -> compute_replay_limit_from_pas pas
+            match pa_node.Session_itp.proof_state with
+            | Some pas when pas.Call_provers.pr_answer = Call_provers.Valid ->
+                compute_replay_limit_from_pas pas
             | _ -> assert false in
-          Gnat_sched.run_goal ~cntexample:false ~limit prover goal) prover
+          C.schedule_proof_attempt c goal prover
+            ~counterexmp:false ~limit ~callback:(fun _ _ -> ())
+            ~notification:(fun _ -> ())) prover
 
 
-
-
-let replay_obj obj =
+let replay_obj session obj =
   let obj_rec = Gnat_expl.HCheck.find explmap obj in
-  GoalSet.iter replay_goal obj_rec.toplevel
+  GoalSet.iter (replay_goal session) obj_rec.toplevel
 
-let replay () =
-  iter replay_obj
-*)
+let replay session =
+  iter (replay_obj session)
 
 (* This register an observer that can monitor the number of provers
    scheduled/running/finished *)

@@ -182,8 +182,6 @@ val session_find_unproved_pa :
 (* find the first unproved proof attempt in a session. If counter examples are
  * activated, this will return a CE proof attempt, if any *)
 
-(* TODO will do it later
-val replay : unit -> unit
-*)
+val replay : Controller_itp.controller -> unit
 
 end

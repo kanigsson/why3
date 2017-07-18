@@ -236,8 +236,8 @@ let normal_handle_one_subp c subp =
    if C.matches_subp_filter s subp then begin
      C.init_subp_vcs c subp;
      Gnat_scheduler.wait_for_idle ();
-     let s = c.Controller_itp.controller_session in
      (* TODO wait until finished *)
+     let s = c.Controller_itp.controller_session in
      Gnat_objectives.iter_leaf_goals s subp (register_goal s)
    end
 
@@ -251,10 +251,8 @@ let _ =
         C.iter_subps c (normal_handle_one_subp c);
         Util.timing_step_completed "gnatwhy3.register_vcs";
         if Gnat_config.replay then begin
-          ()
-          (* TODO replay Reimplement
-          Gnat_objectives.replay ();
-          Gnat_objectives.do_scheduled_jobs (fun _ _ -> ()); *)
+          C.replay c (*;
+          Gnat_objectives.do_scheduled_jobs (fun _ _ -> ());*)
         end else begin
           Gnat_objectives.iter (handle_obj c);
           Util.timing_step_completed "gnatwhy3.schedule_vcs";
