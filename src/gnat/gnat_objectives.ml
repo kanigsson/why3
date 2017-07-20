@@ -848,14 +848,30 @@ let run_goal ~cntexample ?limit ~callback c prover g =
   (* spawn a prover and return immediately. The return value is a tuple of type
      Call_provers.prover_call * Session.goal TODO the next step of the program
      is now directly in the callback *)
+  let session = c.Controller_itp.controller_session in
   let config_prover = fst (Whyconf.Hprover.find c.Controller_itp.controller_provers prover) in
-  let limit =
-    if config_prover.Whyconf.interactive then Call_provers.empty_limit else
-    match limit with
+  let callback _x _t = callback _x _t in
+  let notification _x = () in
+  if config_prover.Whyconf.interactive then
+    let old_paid =
+      Whyconf.Hprover.find_opt
+        (Session_itp.get_proof_attempt_ids session g)
+        prover
+    in
+    let old_file =
+      Opt.get_def None (Opt.map
+        (fun x -> let pa_node = Session_itp.get_proof_attempt_node session x in
+          pa_node.Session_itp.proof_script) old_paid)
+    in
+    C.schedule_edition c g prover ?file:old_file ~callback ~notification
+  else
+    let limit =
+      match limit with
 (* TODO we should pass the type prover not a string here ? *)
-    | None -> Gnat_config.limit ~prover:prover.Whyconf.prover_name
-    | Some x -> x in
-(* TODO recover specific behavior on manual proofs ?
+      | None -> Gnat_config.limit ~prover:prover.Whyconf.prover_name
+      | Some x -> x in
+
+(*
   let old, inplace, limit =
     match (base_prover.Whyconf.interactive,
            Whyconf.Hprover.find_opt
@@ -872,12 +888,13 @@ let run_goal ~cntexample ?limit ~callback c prover g =
           | None -> Gnat_config.limit ~prover
           | Some x -> x in
         None, false, limit in
+
+
 *)
-  let callback _x _t = callback _x _t in
-  let notification _x = () in
-  C.schedule_proof_attempt
-    ~counterexmp:cntexample ~limit ~callback
-    ~notification c g prover
+    if config_prover.Whyconf.interactive then () else
+    C.schedule_proof_attempt
+      ~counterexmp:cntexample ~limit ~callback
+      ~notification c g prover
 
 let goal_has_splits session (goal: goal_id) =
   let goal_transformations = Session_itp.get_transformations session goal in

@@ -338,9 +338,12 @@ let provers, prover_ce, config, env =
            let shortcuts =
              shortcut_merge (Whyconf.get_prover_shortcuts gnatprove_config)
                             (Whyconf.get_prover_shortcuts conf) in
-           Whyconf.set_editors
-             (Whyconf.set_provers ~shortcuts gnatprove_config provers)
-             editors
+           let config =
+             Whyconf.set_editors
+               (Whyconf.set_provers ~shortcuts gnatprove_config provers)
+               editors
+           in
+           config
         end
      with e when Debug.test_flag Debug.stack_trace -> raise e
      | Rc.CannotOpen (f,s) ->
