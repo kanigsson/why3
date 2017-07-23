@@ -173,6 +173,8 @@ val clean_automatic_proofs : Controller_itp.controller -> goal_id -> unit
 
 val goal_has_splits : Session_itp.session -> goal_id -> bool
 
+val is_valid_not_ce: Session_itp.session -> Session_itp.proofNodeID -> bool
+
 val session_proved_status : Controller_itp.controller -> objective -> bool
 (* check the proof status of an objective by looking at the verified/not
    verified status of its VCs in the session *)

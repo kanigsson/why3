@@ -12,8 +12,10 @@ val is_new_manual_proof : Session_itp.session -> goal -> bool
 (* TODO to be redone
 val create_prover_file :
   goal -> Gnat_expl.check -> Session.loaded_prover -> attempt
+*)
 
 (* Get the file associated to the goal with the current manual prover.
    If the current prover is not manual None is returned *)
-val manual_proof_info : attempt -> (string * string) option
+(* TODO manual proof
+val manual_proof_info : Session_itp.session -> Session_itp.proofAttemptID -> (string * string) option
 *)

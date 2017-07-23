@@ -125,7 +125,7 @@ let create_prover_file s goal expl prover driver =
 
 (* ??? maybe use a Buffer.t? Isn't there some code already doing this in Why3?
  * *)
-(* TODO unused
+(* TODO manual_info
 let editor_command (prover: Whyconf.prover) fn =
   (* this function loads the editor for a given prover, otherwise returns a
      default value *)
@@ -143,14 +143,13 @@ let editor_command (prover: Whyconf.prover) fn =
                   editor.Whyconf.editor_command
                   editor.Whyconf.editor_options in
   Gnat_config.actual_cmd fn cmd_line
-*)
 
-(* TODO redo this when we have manual_provers
-let manual_proof_info pa =
-  match pa.proof_edited_as with
+let manual_proof_info session pa =
+  let pa = Session_itp.get_proof_attempt_node session pa in
+  match pa.Session_itp.proof_script with
   | None -> None
   | Some fn ->
-      let base_prover = pa.Session.proof_prover in
+      let base_prover = pa.Session_itp.prover in
       let real_prover =
         List.find (fun p ->
           p = base_prover)
