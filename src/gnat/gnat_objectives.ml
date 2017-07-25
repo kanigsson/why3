@@ -862,7 +862,17 @@ let run_goal ~cntexample ?limit ~callback c prover g =
         (fun x -> let pa_node = Session_itp.get_proof_attempt_node session x in
           pa_node.Session_itp.proof_script) old_paid)
     in
-    C.schedule_edition c g prover ?file:old_file ~callback ~notification
+    begin
+      if old_file = None then
+        let check = get_objective g in
+        let new_file = Gnat_manual.create_prover_file c g check prover in
+        C.schedule_edition ~no_edit:true ~do_check_proof:true
+          c g prover ~file:new_file ~callback ~notification
+      else
+        C.schedule_proof_attempt ~counterexmp:cntexample
+          ~limit:Call_provers.empty_limit ?proof_script:old_file c g prover
+          ~callback ~notification
+    end
   else
     let limit =
       match limit with
@@ -1102,7 +1112,7 @@ and replay_goal c goal =
 
 (* TODO this should be in controller *)
       let proof_attempt_ids = Session_itp.get_proof_attempt_ids session goal in
-      Whyconf.Hprover.iter (fun prover paid ->
+      Whyconf.Hprover.iter (fun _ paid ->
         let pa = Session_itp.get_proof_attempt_node session paid in
         if is_valid_pa pa then raise (PA_Found paid)) proof_attempt_ids;
       (* we go here only if no such PA was found. We now replay the

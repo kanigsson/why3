@@ -199,12 +199,11 @@ let report_messages c obj =
           Some (filter_model r.Call_provers.pr_model trace)
         | _ -> None
       in
-      (*
       let manual_info =
         match unproved_pa with
         | None -> None
-        | Some pa -> Gnat_manual.manual_proof_info s pa in*)
-      Gnat_report.Not_Proved (unproved_task, model, tracefile, None) (* TODO manual_info ?? *) in
+        | Some pa -> Gnat_manual.manual_proof_info s pa in
+      Gnat_report.Not_Proved (unproved_task, model, tracefile, manual_info) in
   Gnat_report.register obj (C.Save_VCs.check_to_json s obj) result
 
 let c = Gnat_objectives.init_cont ()
