@@ -577,13 +577,13 @@ let find_best_untried_prover s g =
       | None ->
           List.find (fun p -> not (has_been_tried_by s g p)) Gnat_config.provers
 
-exception Found
+exception Found_mem
 
 (* Returns true if an elmeent of l satisfies f *)
 let mem f l =
   try
-    List.iter (fun x -> if f x then raise Found) l; false
-  with Found -> true
+    List.iter (fun x -> if f x then raise Found_mem) l; false
+  with Found_mem -> true
 
 let apply_split_goal_if_needed c g =
   (* before doing any proofs, we apply "split" to all "main goals" (see
@@ -601,7 +601,7 @@ let apply_split_goal_if_needed c g =
       ~callback:(fun _ -> ()) ~notification:(fun _ -> ());
     Gnat_scheduler.wait_for_idle ()
 
-exception Found of Gnat_loc.loc
+exception Found_loc of Gnat_loc.loc
 
 let extract_sloc (s: Session_itp.session) (main_goal: goal_id) =
    let task = Session_itp.get_task s main_goal in
@@ -610,13 +610,13 @@ let extract_sloc (s: Session_itp.session) (main_goal: goal_id) =
    try
       Ident.Slab.iter (fun lab ->
         match Gnat_expl.read_label lab.Ident.lab_string with
-        | Some Gnat_expl.Gp_Subp loc -> raise (Found (loc))
+        | Some Gnat_expl.Gp_Subp loc -> raise (Found_loc loc)
         | _ -> ()
       ) label_set;
       Gnat_util.abort_with_message ~internal:true
         (Pp.sprintf "could not find source location for subprogram %s"
         goal_ident.Ident.id_string)
-   with Found l -> l
+   with Found_loc l -> l
 
 let init_subp_vcs c subp =
   apply_split_goal_if_needed c subp.subp_goal
