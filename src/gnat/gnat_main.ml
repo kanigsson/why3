@@ -179,7 +179,13 @@ let report_messages c obj =
     else
       let unproved_pa = C.session_find_unproved_pa c obj in
       let unproved_goal =
-        Opt.map (fun pa -> Session_itp.get_proof_attempt_parent s pa) unproved_pa in
+        (* In some cases (replay) no proofattempt proves the goal but we still
+           want a task to be able to extract the expl from it. *)
+        if unproved_pa = None then
+          C.session_find_unproved_goal c obj
+        else
+          Opt.map (fun pa -> Session_itp.get_proof_attempt_parent s pa) unproved_pa
+      in
       let unproved_task = Opt.map (Session_itp.get_task s) unproved_goal in
       let (tracefile, trace) =
         match unproved_goal, Gnat_config.proof_mode with

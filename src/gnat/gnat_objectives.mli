@@ -181,8 +181,15 @@ val session_proved_status : Controller_itp.controller -> objective -> bool
 
 val session_find_unproved_pa :
     Controller_itp.controller -> objective -> Session_itp.proofAttemptID option
-(* find the first unproved proof attempt in a session. If counter examples are
- * activated, this will return a CE proof attempt, if any *)
+(* find the first unproved (not obsolete) proof attempt in a session which is
+ *  in subforest of objective. If counter examples are activated, this will
+ *  return a CE proof attempt, if any *)
+
+val session_find_unproved_goal :
+    Controller_itp.controller -> objective -> Session_itp.proofNodeID option
+(* find the first unproved goal in a session (in subforest of objective) *)
+
+
 
 val replay : Controller_itp.controller -> unit
 

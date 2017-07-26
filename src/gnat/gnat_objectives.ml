@@ -1068,6 +1068,28 @@ let session_find_unproved_pa c obj =
   with PA_Found p ->
     Some p
 
+exception Found of Session_itp.proofNodeID
+
+let session_find_unproved_goal c obj =
+
+  let obj_rec = Gnat_expl.HCheck.find explmap obj in
+  let session = c.Controller_itp.controller_session in
+  let traversal_function () g =
+    match g with
+    | Session_itp.APn g ->
+        if not (Session_itp.pn_proved session g) then
+          raise (Found g)
+    | _ -> () in
+
+  let iter_on_sub_goal g =
+    Session_itp.fold_all_any session traversal_function () (Session_itp.APn g) in
+
+  try
+    GoalSet.iter iter_on_sub_goal obj_rec.toplevel;
+    None
+  with Found p ->
+    Some p
+
 let compute_replay_limit_from_pas pas =
   match pas with
   | { Call_provers.pr_steps = steps } ->
@@ -1098,7 +1120,7 @@ let rec is_obsolete_verified session goal =
 let rec replay_transf c tf =
   let session = c.Controller_itp.controller_session in
 (* TODO do we want to redo the transformations here ? *)
-  let tf_proves_goal = Session_itp.tn_proved session tf in
+  let tf_proves_goal = Session_itp.tn_proved session tf in (* TODO here we should also include obsolete stuff so this is not correct ? *)
   if tf_proves_goal then List.iter (replay_goal c) (Session_itp.get_sub_tasks session tf)
   else ()
 
