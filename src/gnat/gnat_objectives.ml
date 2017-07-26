@@ -1068,7 +1068,7 @@ let session_find_unproved_pa c obj =
   with PA_Found p ->
     Some p
 
-exception Found of Session_itp.proofNodeID
+exception Found_goal_id of Session_itp.proofNodeID
 
 let session_find_unproved_goal c obj =
 
@@ -1078,7 +1078,7 @@ let session_find_unproved_goal c obj =
     match g with
     | Session_itp.APn g ->
         if not (Session_itp.pn_proved session g) then
-          raise (Found g)
+          raise (Found_goal_id g)
     | _ -> () in
 
   let iter_on_sub_goal g =
@@ -1087,7 +1087,7 @@ let session_find_unproved_goal c obj =
   try
     GoalSet.iter iter_on_sub_goal obj_rec.toplevel;
     None
-  with Found p ->
+  with Found_goal_id p ->
     Some p
 
 let compute_replay_limit_from_pas pas =
