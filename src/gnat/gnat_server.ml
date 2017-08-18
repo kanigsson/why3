@@ -186,7 +186,7 @@ let () =
   | None -> ()
   | _ -> ()
   );
-  Server.init_server gconfig env dir
+  Server.init_server ~send_source:false gconfig env dir
 
 
 (***********************)
