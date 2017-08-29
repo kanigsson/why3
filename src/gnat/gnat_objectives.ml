@@ -333,7 +333,8 @@ let init_cont () =
   (* Init why3server *)
   init ();
   (* TODO reload files to get an up to date controller *)
-  Controller_itp.reload_files c ~use_shapes;
+  (* TODO we do not use the result boolean of reload_files yet *)
+  let _, _ = Controller_itp.reload_files c ~use_shapes in
   c
 
 let objective_status obj =
@@ -455,7 +456,7 @@ let further_split (c: Controller_itp.controller) (goal: goal_id) =
            end
          | Controller_itp.TSscheduled  -> ()
          | Controller_itp.TSfailed _ -> () (* TODO *)
-         | _ -> failwith "TODO"
+(*         | _ -> failwith "TODO"*)
        in
        (* Pass empty function for notification as there is no IDE to update *)
        C.schedule_transformation c goal trans [] ~callback:callback
@@ -604,7 +605,7 @@ let apply_split_goal_if_needed c g =
 exception Found_loc of Gnat_loc.loc
 
 let extract_sloc (s: Session_itp.session) (main_goal: goal_id) =
-   let task = Session_itp.get_task s main_goal in
+   let task, _naming_table = Session_itp.get_task s main_goal in
    let goal_ident = (Task.task_goal task).Decl.pr_name in
    let label_set = goal_ident.Ident.id_label in
    try
@@ -634,7 +635,8 @@ let iter_subps c f =
    let acc = ref [] in
    let _: unit =
      iter_main_goals s (fun g ->
-       if Session_itp.get_task s g = None then ()
+       let task, _naming_table = Session_itp.get_task s g in
+       if task = None then ()
        else acc := mk_subp_goal s g :: !acc) in
    List.iter f !acc
 
@@ -642,7 +644,7 @@ let matches_subp_filter s subp =
    match Gnat_config.limit_subp with
    | None -> true
    | Some lab ->
-         let task = Session_itp.get_task s subp.subp_goal in
+         let task, _naming_table = Session_itp.get_task s subp.subp_goal in
          let goal_ident = (Task.task_goal task).Decl.pr_name in
          let label_set = goal_ident.Ident.id_label in
          Ident.Slab.mem lab label_set
@@ -747,7 +749,8 @@ let add_to_stat prover pr stat =
 
    let save_vc ~cntexample c goal (prover: Whyconf.prover) =
       let check = get_objective goal in
-      let task = Session_itp.get_task c.Controller_itp.controller_session goal in
+      let task, _naming_table =
+        Session_itp.get_task c.Controller_itp.controller_session goal in
       let driver =
         snd (Whyconf.Hprover.find c.Controller_itp.controller_provers prover) in
       let ce_prover = prover.Whyconf.prover_name in
@@ -768,7 +771,8 @@ let add_to_stat prover pr stat =
        | _ -> acc
      in
      fun goal ->
-       let f = Task.task_goal_fmla (Session_itp.get_task s goal) in
+       let task, _naming_table = Session_itp.get_task s goal in
+       let f = Task.task_goal_fmla task in
        compute_trace Gnat_loc.S.empty f
 
    let save_trace s goal =
