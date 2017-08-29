@@ -57,8 +57,6 @@ type proof_attempt_node = {
 type proof_node = {
   proofn_name                    : Ident.ident;
   proofn_expl                    : string;
-  proofn_task                    : Task.task;
-  proofn_table                   : Trans.naming_table option;
   proofn_parent                  : proof_parent;
   proofn_checksum                : Termcode.checksum option;
   proofn_shape                   : Termcode.shape;
@@ -108,6 +106,9 @@ type session = {
   session_files                 : file Hstr.t;
   mutable session_shape_version : int;
   session_prover_ids            : int Hprover.t;
+  (* tasks *)
+  session_raw_tasks : Task.task Hpn.t;
+  session_tasks : (bool * Task.task * Trans.naming_table) Hpn.t;
   (* proved status *)
   file_state: bool Hstr.t;
   th_state: bool Ident.Hid.t;
@@ -115,7 +116,11 @@ type session = {
   pn_state : bool Hpn.t;
 }
 
+
+
 let theory_parent s th =
+  Debug.dprintf debug "[Session_itp.theory_parent] th.parent_name = %s@."
+                th.theory_parent_name;
   Hstr.find s.session_files th.theory_parent_name
 
 let session_iter_proof_attempt f s =
@@ -206,13 +211,28 @@ let get_proofNode (s : session) (id : proofNodeID) =
     Hint.find s.proofNode_table id
   with Not_found -> raise BadID
 
-let get_task (s:session) (id:proofNodeID) =
-  let node = get_proofNode s id in
-  node.proofn_task
+let get_raw_task s id =
+  Hpn.find s.session_raw_tasks id
 
-let get_table (s: session) (id: proofNodeID) =
-  let node = get_proofNode s id in
-  node.proofn_table
+let get_task ?do_intros s n =
+  try
+    let (b,ti,ta) = Hpn.find s.session_tasks n in
+    match do_intros with
+    | None -> (ti,ta)
+    | Some b' -> if b <> b' then raise Not_found; (ti,ta)
+  with Not_found ->
+    let t = get_raw_task s n in
+    let do_intros =
+      match do_intros with
+      | None -> true
+      | Some b -> b
+    in
+    let ti =
+      if do_intros then Trans.apply Introduction.introduce_premises t else t
+    in
+    let ta = Args_wrapper.build_naming_tables ti in
+    Hpn.add s.session_tasks n (do_intros,ti,ta);
+    ti,ta
 
 let get_transfNode (s : session) (id : transID) =
   try
@@ -266,22 +286,25 @@ let is_detached (s: session) (a: any) =
   match a with
   | AFile _file -> false
   | ATh th     ->
-    let parent_name = th.theory_parent_name in
-    let parent = Hstr.find s.session_files parent_name in
-    List.exists (fun x -> x = th) parent.file_detached_theories
+     let parent_name = th.theory_parent_name in
+     begin
+       try let parent = Hstr.find s.session_files parent_name in
+           List.exists (fun x -> x = th) parent.file_detached_theories
+       with Not_found -> true
+     end
   | ATn tn     ->
     let pn_id = get_trans_parent s tn in
-    let pn = get_proofNode s pn_id in
-    pn.proofn_task = None ||
+    let _pn = get_proofNode s pn_id in
+    (* pn.proofn_task = None || *)
     List.exists (fun x -> x = tn) (get_detached_trans s pn_id)
   | APn pn     ->
-    let pn = get_proofNode s pn in
-    pn.proofn_task = None
+    let _pn = get_proofNode s pn in
+    (* pn.proofn_task = None *) false
   | APa pa     ->
     let pa = get_proof_attempt_node s pa in
     let pn_id = pa.parent in
-    let pn = get_proofNode s pn_id in
-    pn.proofn_task = None
+    let _pn = get_proofNode s pn_id in
+    (* pn.proofn_task = None *) false
 
 let rec get_encapsulating_theory s any =
   match any with
@@ -493,10 +516,12 @@ let empty_session ?shape_version dir =
     session_files = Hstr.create 3;
     session_shape_version = shape_version;
     session_prover_ids = Hprover.create 7;
+    session_raw_tasks = Hpn.create 97;
+    session_tasks = Hpn.create 97;
     file_state = Hstr.create 3;
     th_state = Ident.Hid.create 7;
-    tn_state = Htn.create 42;
-    pn_state = Hpn.create 42;
+    tn_state = Htn.create 97;
+    pn_state = Hpn.create 97;
   }
 
 (**************************************************)
@@ -542,26 +567,25 @@ let graft_proof_attempt ?file (s : session) (id : proofNodeID) (pr : Whyconf.pro
    of proofNodeID [id] of parent [p] of task [t] *)
 let mk_proof_node ~version ~expl (s : session) (n : Ident.ident) (t : Task.task)
     (parent : proof_parent) (node_id : proofNodeID) =
-  let tables = Args_wrapper.build_naming_tables t in
+  (* let tables = Args_wrapper.build_naming_tables t in *)
   let sum = Some (Termcode.task_checksum ~version t) in
   let shape = Termcode.t_shape_task ~version ~expl t in
   let pn = { proofn_name = n;
              proofn_expl = expl;
-             proofn_task = t;
-             proofn_table = Some tables;
+             (* proofn_table = Some tables; *)
              proofn_parent = parent;
              proofn_checksum = sum;
              proofn_shape = shape;
              proofn_attempts = Hprover.create 7;
              proofn_transformations = [] } in
+  Hpn.add s.session_raw_tasks node_id t;
   Hint.add s.proofNode_table node_id pn
 
 let mk_proof_node_no_task (s : session) (n : Ident.ident)
     (parent : proof_parent) (node_id : proofNodeID) sum shape proved =
   let pn = { proofn_name = n;
              proofn_expl = "";
-             proofn_task = None;
-             proofn_table = None;
+             (* proofn_table = None; *)
              proofn_parent = parent;
              proofn_checksum = sum;
              proofn_shape = shape;
@@ -756,7 +780,9 @@ let update_theory_node notification s th =
       notification (ATh th);
       try let p = theory_parent s th in
           update_file_node notification s p
-      with Not_found -> Format.eprintf "Session_itp.update_theory_node: parent missing@."; exit 1
+      with Not_found when not (Debug.test_flag Debug.stack_trace) ->
+        Format.eprintf "[Fatal] Session_itp.update_theory_node: parent missing@.";
+        assert false
     end
 
 let rec update_goal_node notification s id =
@@ -770,8 +796,10 @@ let rec update_goal_node notification s id =
       match get_proof_parent s id with
       | Trans trans_id -> update_trans_node notification s trans_id
       | Theory th -> update_theory_node notification s th
-      | exception Not_found ->
-                  Format.eprintf "Session_itp.update_goal_node: parent missing@."; exit 1
+      | exception Not_found when not (Debug.test_flag Debug.stack_trace) ->
+                  Format.eprintf "Session_itp.update_goal_node: parent missing@.";
+                  Printexc.print_backtrace stderr;
+                  assert false
     end
 
 and update_trans_node notification s trid =
@@ -1313,7 +1341,7 @@ end
 module AssoGoals = Termcode.Pairing(Goal)(Goal)
 
 let found_obsolete = ref false
-let found_missed_goals_in_theory = ref false
+let found_detached = ref false
 
 let save_detached_goals old_s detached_goals_id s parent =
   let save_proof parent old_pa_n =
@@ -1370,17 +1398,13 @@ let merge_proof new_s ~goal_obsolete new_goal _ old_pa_n =
 let add_registered_transformation s env old_tr goal_id =
   let goal = get_proofNode s goal_id in
   try
-    let tr = List.find (fun transID -> (get_transfNode s transID).transf_name = old_tr.transf_name)
+    let _tr = List.find (fun transID -> (get_transfNode s transID).transf_name = old_tr.transf_name)
         goal.proofn_transformations in
     (* NOTE: should not happen *)
-    Debug.dprintf debug "[merge_theory] trans found@.";
-    tr
+    Debug.dprintf debug "[merge_theory] transformation already present@.";
+    assert false
   with Not_found ->
-    Debug.dprintf debug "[merge_theory] trans not found@.";
-    let task = goal.proofn_task in
-    let tables = match goal.proofn_table with
-    | None -> raise (Trans.Bad_name_table "Session_itp.add_registered_transformation")
-    | Some tables -> tables in
+    let task,tables = get_task s goal_id in
     let subgoals = Trans.apply_transform_args old_tr.transf_name env old_tr.transf_args tables task in
     graft_transf s goal_id old_tr.transf_name old_tr.transf_args subgoals
 
@@ -1422,23 +1446,23 @@ and merge_trans ~use_shapes env old_s new_s new_goal_id old_tr_id =
   in
   List.iter (function
       | ((new_goal_id,_), Some ((old_goal_id,_), goal_obsolete)) ->
-        Debug.dprintf debug "[merge_theory] pairing paired one goal, yeah !@.";
         merge_goal ~use_shapes env new_s old_s ~goal_obsolete (get_proofNode old_s old_goal_id) new_goal_id
       | ((id,s), None) ->
-        Debug.dprintf debug "[merge_theory] pairing found missed sub goal :( : %s @."
+        Debug.dprintf debug "[merge_theory] missed subgoal: %s@."
           (get_proofNode s id).proofn_name.Ident.id_string;
-        found_missed_goals_in_theory := true)
+        found_detached := true)
     associated;
   (* save the detached goals *)
   let detached = List.map (fun (a,_) -> a) detached in
   new_tr.transf_detached_subtasks <- save_detached_goals old_s detached new_s (Trans new_tr_id))
-  with | _ ->
-    (* TODO should create a detached transformation instead *)
-    ()
+  with _ ->
+    Debug.dprintf debug
+      "[Session_itp.merge_trans] transformation failed: %s@." old_tr.transf_name;
+    (* TODO should create a detached transformation *)
+    found_detached := true
 
 
 let merge_theory ~use_shapes env old_s old_th s th : unit =
-  let found_missed_goals_in_theory = ref false in
   let old_goals_table = Hstr.create 7 in
   (* populate old_goals_table *)
   List.iter
@@ -1491,9 +1515,10 @@ let merge_theory ~use_shapes env old_s old_th s th : unit =
       | ((new_goal_id,_), Some ((old_goal_id,_), goal_obsolete)) ->
         Debug.dprintf debug "[merge_theory] pairing paired one goal, yeah !@.";
         merge_goal ~use_shapes env s old_s ~goal_obsolete (get_proofNode old_s old_goal_id) new_goal_id
-      | (_, None) ->
-        Debug.dprintf debug "[merge_theory] pairing found missed sub goal :( @.";
-        found_missed_goals_in_theory := true)
+      | ((id,_), None) ->
+         Debug.dprintf debug "[merge_theory] pairing found missed sub goal: %s@."
+                       (get_proofNode s id).proofn_name.Ident.id_string;
+        found_detached := true)
     associated;
   (* store the detached goals *)
   let detached = List.map (fun (a,_) -> a) detached in
@@ -1527,30 +1552,14 @@ let make_theory_section ?merge (s:session) parent_name (th:Theory.theory)
 
 (* add a why file to a session *)
 let add_file_section (s:session) (fn:string)
-    (theories:Theory.theory list) format : unit =
+    (theories:Theory.theory list) format : file =
   let fn = Sysutil.relativize_filename s.session_dir fn in
+  Debug.dprintf debug "[Session_itp.add_file_section] fn = %s@." fn;
   if Hstr.mem s.session_files fn then
-    Debug.dprintf debug "[session] file %s already in database@." fn
-  else
     begin
-      let f = { file_name = fn;
-                file_format = format;
-                file_theories = [];
-                file_detached_theories = [] }
-      in
-      Hstr.add s.session_files fn f;
-      let theories = List.map (make_theory_section s fn) theories in
-      f.file_theories <- theories
+      Debug.dprintf debug "[session] file %s already in database@." fn;
+      assert false
     end
-
-(* add a why file to a session and try to merge its theories with the
-   provided ones with matching names *)
-let merge_file_section ~use_shapes ~old_ses ~old_theories ~env
-    (s:session) (fn:string) (theories:Theory.theory list) format
-  : unit =
-  let fn = Sysutil.relativize_filename s.session_dir fn in
-  if Hstr.mem s.session_files fn then
-    Debug.dprintf debug "[session] file %s already in database@." fn
   else
     let f = { file_name = fn;
               file_format = format;
@@ -1558,34 +1567,88 @@ let merge_file_section ~use_shapes ~old_ses ~old_theories ~env
               file_detached_theories = [] }
     in
     Hstr.add s.session_files fn f;
-    let theories,detached =
-      let old_th_table = Hstr.create 7 in
-      List.iter
-        (fun th -> Hstr.add old_th_table th.theory_name.Ident.id_string th)
-        old_theories;
-      let add_theory (th: Theory.theory) =
-        try
-          (* look for a theory with same name *)
-          let theory_name = th.Theory.th_name.Ident.id_string in
-          (* if we found one, we remove it from the table and merge it *)
-          let old_th = Hstr.find old_th_table theory_name in
-          Hstr.remove old_th_table theory_name;
-          make_theory_section ~merge:(old_ses,old_th,env,use_shapes) s fn th
-        with Not_found ->
-          (* if no theory was found we make a new theory section *)
-          make_theory_section s fn th
-      in
-      let theories = List.map add_theory theories in
-      (* we save the remaining, detached *)
-      let detached = Hstr.fold
-          (fun _key th tl ->
-             (save_detached_theory fn old_ses th s) :: tl)
-          old_th_table [] in
-      theories, detached
-    in
+    let theories = List.map (make_theory_section s fn) theories in
     f.file_theories <- theories;
-    f.file_detached_theories <- detached;
-    update_file_node (fun _ -> ()) s f
+    f
+
+      (* add a why file to a session and try to merge its theories with the
+   provided ones with matching names *)
+let merge_file_section ~use_shapes ~old_ses ~old_theories ~env
+    (s:session) (fn:string) (theories:Theory.theory list) format
+    : unit =
+  let f = add_file_section s fn [] format in
+  let fn = f.file_name in
+  let theories,detached =
+    let old_th_table = Hstr.create 7 in
+    List.iter
+      (fun th -> Hstr.add old_th_table th.theory_name.Ident.id_string th)
+      old_theories;
+    let add_theory (th: Theory.theory) =
+      try
+        (* look for a theory with same name *)
+        let theory_name = th.Theory.th_name.Ident.id_string in
+        (* if we found one, we remove it from the table and merge it *)
+        let old_th = Hstr.find old_th_table theory_name in
+        Hstr.remove old_th_table theory_name;
+        make_theory_section ~merge:(old_ses,old_th,env,use_shapes) s fn th
+      with Not_found ->
+        (* if no theory was found we make a new theory section *)
+        make_theory_section s fn th
+    in
+    let theories = List.map add_theory theories in
+    (* we save the remaining, detached *)
+    let detached = Hstr.fold
+                     (fun _key th tl ->
+                      (save_detached_theory fn old_ses th s) :: tl)
+                     old_th_table [] in
+    theories, detached
+  in
+  f.file_theories <- theories;
+  f.file_detached_theories <- detached;
+  update_file_node (fun _ -> ()) s f
+
+
+
+
+let read_file env ?format fn =
+  let theories = Env.read_file Env.base_language env ?format fn in
+  let ltheories =
+    Stdlib.Mstr.fold
+      (fun name th acc ->
+        (* Hack : with WP [name] and [th.Theory.th_name.Ident.id_string] *)
+        let th_name =
+          Ident.id_register (Ident.id_derive name th.Theory.th_name) in
+         match th.Theory.th_name.Ident.id_loc with
+           | Some l -> (l,th_name,th)::acc
+           | None   -> (Loc.dummy_position,th_name,th)::acc)
+      theories []
+  in
+  let th =  List.sort
+      (fun (l1,_,_) (l2,_,_) -> Loc.compare l1 l2)
+      ltheories
+  in
+  List.map (fun (_,_,a) -> a) th
+
+let merge_file  ~use_shapes env (ses : session) (old_ses : session) file =
+  let format = file_format file in
+  let old_theories = file_theories file in
+  let file_name = Filename.concat (get_dir old_ses) (file_name file) in
+  let new_theories =
+    try
+      read_file env file_name ?format
+    with e -> (* TODO: filter only syntax error and typing errors *)
+      raise e
+  in
+  merge_file_section
+    ses ~use_shapes ~old_ses ~old_theories
+    ~env file_name new_theories format
+
+let merge_files ~use_shapes env (ses:session)  (old_ses : session) =
+  Stdlib.Hstr.iter
+    (fun _ f -> merge_file ~use_shapes env ses old_ses f)
+    (get_files old_ses);
+  !found_obsolete,!found_detached
+
 
 (************************)
 (* saving state on disk *)
@@ -1788,7 +1851,7 @@ and save_trans s ctxt fmt (tid,t) =
     arg_id := !arg_id + 1;
     fprintf fmt "arg%i=\"%a\"" !arg_id save_string s
   in
-  fprintf fmt "@\n@[<hov 1>@[<h><transf@ name=\"%a\" %a%a>@]"
+  fprintf fmt "@\n@[<hov 1>@[<h><transf@ name=\"%a\"%a %a>@]"
     save_string t.transf_name
     (save_bool_def "proved" false) (tn_proved s tid)
     (Pp.print_list Pp.space save_arg) t.transf_args;

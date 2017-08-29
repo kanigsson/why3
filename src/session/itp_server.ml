@@ -83,9 +83,12 @@ let loaded_strategies = ref []
 (****** Exception handling *********)
 
 let p s id =
+(*
   let tables = match (Session_itp.get_table s id) with
   | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
   | Some tables -> tables in
+ *)
+  let _,tables = Session_itp.get_task s id in
   let pr = tables.Trans.printer in
   let apr = tables.Trans.aprinter in
   (Pretty.create pr apr pr pr false)
@@ -651,7 +654,7 @@ end
   (* Reload_files that is used even if the controller is not correct. It can
      be incorrect and end up in a correct state. *)
   let reload_files cont ~use_shapes =
-    try reload_files cont ~use_shapes; true with
+    try let _ = reload_files cont ~use_shapes in true with
     | Loc.Located (loc, e) ->
       let loc = relativize_location cont.controller_session loc in
       let s = Format.asprintf "%a at %a@."
@@ -787,7 +790,7 @@ end
         let session = d.cont.Controller_itp.controller_session in
         (match node with
         | APn pr_node ->
-            let task = Session_itp.get_task session pr_node in
+            let task,_table = Session_itp.get_task session pr_node in
             let b = label_detection task in
             if b then
               (focused_node := Focus_on node;
@@ -899,18 +902,14 @@ end
 
   (* -- send the task -- *)
   let task_of_id d id do_intros loc =
-    let task = get_task d.cont.controller_session id in
-    let tables = get_table d.cont.controller_session id in
+    let task,tables = get_task ~do_intros d.cont.controller_session id in
     (* This function also send source locations associated to the task *)
     let loc_color_list = if loc then get_locations task else [] in
     let task_text =
-      match tables with
-      | None -> assert false
-      | Some t ->
-         let pr = t.Trans.printer in
-         let apr = t.Trans.aprinter in
-         let module P = (val Pretty.create pr apr pr pr false) in
-         Pp.string_of P.print_sequent task
+      let pr = tables.Trans.printer in
+      let apr = tables.Trans.aprinter in
+      let module P = (val Pretty.create pr apr pr pr false) in
+      Pp.string_of P.print_sequent task
     in
     task_text, loc_color_list
 

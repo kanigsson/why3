@@ -117,7 +117,6 @@ let get_undetached_children_no_pa s any : any list =
 
 
 
-
 (* printing *)
 
 module PSession = struct
@@ -191,60 +190,26 @@ let print_session fmt c =
 
 
 
-let read_file env ?format fn =
-  let theories = Env.read_file Env.base_language env ?format fn in
-  let ltheories =
-    Stdlib.Mstr.fold
-      (fun name th acc ->
-        (* Hack : with WP [name] and [th.Theory.th_name.Ident.id_string] *)
-        let th_name =
-          Ident.id_register (Ident.id_derive name th.Theory.th_name) in
-         match th.Theory.th_name.Ident.id_loc with
-           | Some l -> (l,th_name,th)::acc
-           | None   -> (Loc.dummy_position,th_name,th)::acc)
-      theories []
-  in
-  let th =  List.sort
-      (fun (l1,_,_) (l2,_,_) -> Loc.compare l1 l2)
-      ltheories
-  in
-  List.map (fun (_,_,a) -> a) th
-
 
 (** reload files, associating old proof attempts and transformations
     to the new goals.  old theories and old goals for which we cannot
     find a corresponding new theory resp. old goal are kept, with
     tasks associated to them *)
 
-let merge_file (old_ses : session) (c : controller) ~use_shapes _ file =
-  let format = file_format file in
-  let old_theories = file_theories file in
-  let file_name = Filename.concat (get_dir old_ses) (file_name file) in
-  let new_theories =
-    try
-      read_file c.controller_env file_name ?format
-    with e -> (* TODO: filter only syntax error and typing errors *)
-      raise e
-  in
-  merge_file_section
-    c.controller_session ~use_shapes ~old_ses ~old_theories
-    ~env:c.controller_env file_name new_theories format
-
 let reload_files (c : controller) ~use_shapes =
   let old_ses = c.controller_session in
   c.controller_session <-
     empty_session ~shape_version:(get_shape_version old_ses) (get_dir old_ses);
   try
-    Stdlib.Hstr.iter
-      (fun f -> merge_file old_ses c ~use_shapes f)
-      (get_files old_ses);
+    merge_files ~use_shapes c.controller_env c.controller_session old_ses
   with e ->
     c.controller_session <- old_ses;
     raise e
 
 let add_file c ?format fname =
-  let theories = read_file c.controller_env ?format fname in
-  add_file_section c.controller_session fname theories format
+  let theories = Session_itp.read_file c.controller_env ?format fname in
+  let (_ : file) = add_file_section c.controller_session fname theories format in
+  ()
 
 
 module type Scheduler = sig
@@ -280,11 +245,10 @@ let build_prover_call ?proof_script ~cntexample c id pr limit callback =
     Whyconf.get_complete_command
       config_pr
       ~with_steps:Call_provers.(limit.limit_steps <> empty_limit.limit_steps) in
-  let task = Session_itp.get_task c.controller_session id in
-  let table = Session_itp.get_table c.controller_session id in
+  let task,_table = Session_itp.get_task c.controller_session id in
   let call =
     Driver.prove_task ?old:proof_script ~cntexample:cntexample ~inplace:false ~command
-                      ~limit ?name_table:table driver task
+                      ~limit (*?name_table:table*) driver task
   in
   let pa = (c.controller_session,id,pr,proof_script,callback,false,call) in
   Queue.push pa prover_tasks_in_progress
@@ -400,15 +364,12 @@ let schedule_proof_attempt ?proof_script c id pr
 let create_file_rel_path c pr pn =
   let session = c.controller_session in
   let driver = snd (Hprover.find c.controller_provers pr) in
-  let task = Session_itp.get_task session pn in
+  let task,_table = Session_itp.get_task session pn in
   let session_dir = Session_itp.get_dir session in
   let th = get_encapsulating_theory session (APn pn) in
   let th_name = (Session_itp.theory_name th).Ident.id_string in
   let f = get_encapsulating_file session (ATh th) in
-  (* TODO trying to get the proper name of the file without any noise *)
-  let fn = Filename.chop_extension
-      (List.hd (List.rev (Sysutil.path_of_file
-                            (Sysutil.normalize_filename (file_name f))))) in
+  let fn = Filename.chop_extension (Filename.basename (file_name f)) in
   let file = Driver.file_of_task driver fn th_name task in
   let file = Filename.concat session_dir file in
   let file = Sysutil.uniquify file in
@@ -418,7 +379,7 @@ let create_file_rel_path c pr pn =
 let update_edit_external_proof c pn ?panid pr =
   let session = c.controller_session in
   let driver = snd (Hprover.find c.controller_provers pr) in
-  let task = Session_itp.get_task session pn in
+  let task,_table = Session_itp.get_task session pn in
   let session_dir = Session_itp.get_dir session in
   let file =
     match panid with
@@ -540,10 +501,8 @@ let schedule_edition c id pr ~no_edit ~do_check_proof ?file ~callback ~notificat
 
 let schedule_transformation_r c id name args ~callback =
   let apply_trans () =
-    let task = get_task c.controller_session id in
-    let table = match get_table c.controller_session id with
-    | None -> raise (Trans.Bad_name_table "Controller_itp.schedule_transformation_r")
-    | Some table -> table in
+    (* TODO: use get_raw_task instead, and make only the needed intros *)
+    let task,table = get_task c.controller_session id in
     begin
       try
         let subtasks =

@@ -114,17 +114,18 @@ let cont_from_session ~notify cont f : bool option =
 let sort_pair (x,_) (y,_) = String.compare x y
 
 let list_transforms () =
+  let l =
     List.rev_append
       (List.rev_append (Trans.list_transforms ()) (Trans.list_transforms_l ()))
       (List.rev_append (Trans.list_transforms_with_args ()) (Trans.list_transforms_with_args_l ()))
+  in List.sort sort_pair l
 
 let list_transforms_query _cont _args =
   let l = list_transforms () in
   let print_trans_desc fmt (x,r) =
     Format.fprintf fmt "@[<hov 2>%s@\n@[<hov>%a@]@]" x Pp.formatted r
   in
-  Pp.string_of (Pp.print_list Pp.newline2 print_trans_desc)
-    (List.sort sort_pair l)
+  Pp.string_of (Pp.print_list Pp.newline2 print_trans_desc) l
 
 let list_provers cont _args =
   let l =
@@ -409,9 +410,12 @@ let interp commands_table config cont id s =
     | Qnotask f, _ -> Query (f cont args)
     | Qtask _, None -> QError "please select a goal first"
     | Qtask f, Some id ->
+(*
        let table = match Session_itp.get_table cont.Controller_itp.controller_session id with
        | None -> raise (Trans.Bad_name_table "Server_utils.interp")
        | Some table -> table in
+ *)
+       let _,table = Session_itp.get_task cont.Controller_itp.controller_session id in
        let s = try Query (f cont table args) with
        | Undefined_id s -> QError ("No existing id corresponding to " ^ s)
        | Number_of_arguments -> QError "Bad number of arguments"

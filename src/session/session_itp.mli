@@ -84,8 +84,8 @@ val is_below: session -> any -> any -> bool
 
 type proof_parent = Trans of transID | Theory of theory
 
-val get_task : session -> proofNodeID -> Task.task
-val get_table : session -> proofNodeID -> Trans.naming_table option
+val get_raw_task : session -> proofNodeID -> Task.task
+val get_task : ?do_intros:bool -> session -> proofNodeID -> Task.task * Trans.naming_table
 
 val get_transformations : session -> proofNodeID -> transID list
 val get_proof_attempt_ids :
@@ -147,12 +147,19 @@ val empty_session : ?shape_version:int -> string -> session
 
 val add_file_section :
   session -> string -> (Theory.theory list) ->
-  Env.fformat option -> unit
+  Env.fformat option -> file
 (** [add_file_section s fn ths] adds a new
     'file' section in session [s], named [fn], containing fresh theory
     subsections corresponding to theories [ths]. The tasks of each
     theory nodes generated are computed using [Task.split_theory]. *)
 
+val read_file :
+  Env.env -> ?format:Env.fformat -> string -> Theory.theory list
+(* [read_file env ~format fn] parses the source file [fn], types it
+   and extract its theories.  Parse errors and typing errors are
+   signaled with exceptions.  *)
+
+(*
 val merge_file_section :
   use_shapes:bool -> old_ses:session -> old_theories:theory list ->
   env:Env.env -> session -> string -> Theory.theory list ->
@@ -164,6 +171,18 @@ val merge_file_section :
     old_ths, it is attempted to associate the old goals,
     proof_attempts and transformations to the goals of the new
     theory *)
+*)
+
+val merge_files :
+  use_shapes:bool -> Env.env -> session -> session -> bool * bool
+(** [merge_files ~use_shapes env ses old_ses] merges the file sections
+    of session [s] with file sections of the same name in old session
+    [old_ses]. Recursively, for each theory whose name is identical to
+    old theories, it is attempted to associate the old goals,
+    proof_attempts and transformations to the goals of the new theory.
+    Returns a pair [(o,d)] such that [o] is true when obsolete proof
+    attempts where found and [d] is true id detached theories, goals
+    or transformations were found.  *)
 
 val graft_proof_attempt : ?file:string -> session -> proofNodeID ->
   Whyconf.prover -> limit:Call_provers.resource_limit -> proofAttemptID
