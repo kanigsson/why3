@@ -1,4 +1,0 @@
-theory T
-use real.Real
-goal toto: true
-end
