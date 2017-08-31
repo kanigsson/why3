@@ -54,7 +54,7 @@ let ident_printer () =
       "and"; "distinct"; "is_int"; "not"; "or"; "select";
       "store"; "to_int"; "to_real"; "xor";
 
-      "div"; "mod";
+      "div"; "mod"; "rem";
 
       "concat"; "bvnot"; "bvand"; "bvor"; "bvneg"; "bvadd"; "bvmul"; "bvudiv";
       "bvurem"; "bvshl"; "bvlshr"; "bvult"; "bvnand"; "bvnor"; "bvxor";
@@ -62,7 +62,7 @@ let ident_printer () =
       "bvugt"; "bvuge"; "bvslt"; "bvsle"; "bvsgt"; "bvsge"; "rotate_left";
       "rotate_right"; "bvredor"; "bvredand";
 
-      "cos"; "sin"; "tan"; "atan"; "pi";
+      "sin"; "cos"; "tan"; "asin"; "acos"; "atan"; "pi";
 
      (* the new floating point theory - updated to the 2014-05-27 standard *)
       "FloatingPoint"; "fp";
@@ -107,7 +107,8 @@ let ident_printer () =
       "BitVec"; "extract"; "bv2nat"; "nat2bv";
 
      (* From Z3 *)
-      "map"; "bv"; "subset"; "union"; "default";
+      "map"; "bv"; "default";
+      "difference";
       ]
   in
   let san = sanitizer char_to_alpha char_to_alnumus in
@@ -439,11 +440,14 @@ let print_type_decl info fmt ts =
     (print_ident info) ts.ts_name (List.length ts.ts_args)
 
 let print_param_decl info fmt ls =
-  if Mid.mem ls.ls_name info.info_syn then () else
-  fprintf fmt "@[<hov 2>(declare-fun %a (%a) %a)@]@\n@\n"
-    (print_ident info) ls.ls_name
-    (print_list space (print_type info)) ls.ls_args
-    (print_type_value info) ls.ls_value
+  if Mid.mem ls.ls_name info.info_syn then () else match ls.ls_args with
+    | [] -> fprintf fmt "@[<hov 2>(declare-const %a %a)@]@\n@\n"
+              (print_ident info) ls.ls_name
+              (print_type_value info) ls.ls_value
+    | _  -> fprintf fmt "@[<hov 2>(declare-fun %a (%a) %a)@]@\n@\n"
+              (print_ident info) ls.ls_name
+              (print_list space (print_type info)) ls.ls_args
+              (print_type_value info) ls.ls_value
 
 let print_logic_decl info fmt (ls,def) =
   if Mid.mem ls.ls_name info.info_syn then () else begin
