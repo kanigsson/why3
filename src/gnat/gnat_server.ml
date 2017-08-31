@@ -6,23 +6,47 @@ let debug = false
 
 module Gnat_Protocol = struct
 
+  let notification_queue = Queue.create ()
   let requests = ref []
 
-  let push_request_string (s: string) =
+  let push_one_request_string (s: string) =
+    let oc = open_out "pata.out" in
+    Printf.fprintf oc "%s\n" s;
+    close_out oc;
     let r = parse_request s in
     requests := r :: !requests
+
+  (* In a string, there can be several requests separated by ">>>>". *)
+  let push_request_string (s: string) =
+    let list_request = Str.split (Str.regexp ">>>>") s in
+    List.iter push_one_request_string list_request
 
   let push_request r =
     requests := r :: !requests
 
+  (* A disavantage is that we only treat one request at a time *)
   let get_requests () =
     let l = !requests in
     requests := [];
     List.rev l
 
-(* TODO think of a better way of separating stuff than > *)
+  let length_notif () : int =
+    Queue.length notification_queue
+
   let notify n =
-    Format.printf "%a>>>>@." print_notification n
+    Queue.add n notification_queue
+
+  (* Communicate n notifications *)
+  let communicate_notification () =
+    try
+      let n = Queue.pop notification_queue in
+      let oc = open_out "pata.out" in
+      Printf.fprintf oc "Depop \n";
+      close_out oc;
+(* TODO think of a better way of separating stuff than > *)
+      Format.printf "%a>>>>@." print_notification n
+    with
+    _ -> ()
 
 end
 
@@ -68,65 +92,74 @@ let timeout ~ms f =
   let time = Unix.gettimeofday () in
   insert_timeout_handler ms (time +. ms) f
 
-(* buffer for storing character read on stdin *)
-let buf = Bytes.create 256
+(* buffer for storing character read on stdin.
+   4096 is arbitrary (cf spark plugin) *)
+let buf = Bytes.create 4096
 
-let main_loop treat_requests =
+let main_loop treat_requests length_notif communicate_notification =
+
+  let delay_comm = ref 0 in
   (* attempt to run the first timeout handler *)
   while true do
-    let time = Unix.gettimeofday () in
+    delay_comm := !delay_comm + 1;
     try (
-    match !timeout_handler with
-     | (ms,t,f) :: rem when t <= time ->
-        timeout_handler := rem;
-        let b = f () in
-        let time = Unix.gettimeofday () in
-        if b then insert_timeout_handler ms (ms +. time) f
-     | _ ->
-           (* no idle handler *)
-           let delay =
-             match !timeout_handler with
-             | [] -> 0.125
-             (* 1/8 second by default *)
-             | (_,t,_) :: _ -> t -. time
-             (* or the time left until the next timeout otherwise *)
-           in
-           begin
-             let (todo, _, _) = Unix.select [Unix.stdin] [] [] delay in
-             (* TODO maximum size of request for now *)
-             if todo != [] then
-               let n = try Unix.read Unix.stdin buf 0 256 with _ -> 0 in
-               if n < 1 then
-                 begin
-                   (* attempt to run the first idle handler *)
-                   match !idle_handler with
-                   | (p,f) :: rem ->
-                       idle_handler := rem;
-                       let b = f () in
-                       if b then insert_idle_handler p f
-                   | [] -> ()
-                 end
-               else
-                 begin
-                   let s = Bytes.sub_string buf 0 (n-1) in
-                   (* TODO here maybe empty completely stdin ? *)
-                   treat_requests s
-                 end
-             else
-               begin
-                 (* attempt to run the first idle handler *)
-                 match !idle_handler with
-                 | (p,f) :: rem ->
-                     idle_handler := rem;
-                     let b = f () in
-                     if b then insert_idle_handler p f
-                 | [] -> ()
-               end
-           end
-  ) with e ->  Format.printf "FAIL TODO %a>>>>@." Exn_printer.exn_printer e;
-    if debug then
-      (* TODO *)
-      raise e
+      (* We want to avoid too many communications. We use delay_comm to avoid
+         selecting on stdin/stdout too often. TODO there must be a better way
+         for this. 10 is arbitrary *)
+      (* Communications *)
+      if !delay_comm = 10 then
+        begin
+          delay_comm := 0;
+          (* TODO why 0.1 ? *)
+          let (todo, _, _) = Unix.select [Unix.stdin] [] [] 0.1 in
+          if todo != [] then
+            let n = try Unix.read Unix.stdin buf 0 4096 with _ -> 0 in
+            if n < 1 then
+              ()
+            else
+              let s = Bytes.sub_string buf 0 (n-1) in
+              (* TODO: Note that, here, we probably assume that stdin is of size
+                 less than 4096. If requests are sent really fast (or ITP server
+                 is busy doing something else), this could not be true. So, we
+                 should change this on the long term. Easy to end up with
+                 partial requests which we do not want here. *)
+              treat_requests s
+          else
+            ();
+          (* Here we only query stdout if we have something to write *)
+          if length_notif () > 0 then
+            (* TODO why 0.1 ? *)
+            let (_, tonotify, _) = Unix.select [] [Unix.stdout] [] 0.1 in
+            if tonotify != [] then
+              for i = 0 to length_notif() do
+                try communicate_notification () with _ -> ()
+              done
+            else
+              ()
+          else
+            ()
+        end;
+      let time = Unix.gettimeofday () in
+      match !timeout_handler with
+      | (ms,t,f) :: rem when t <= time ->
+          timeout_handler := rem;
+          let b = f () in
+          let time = Unix.gettimeofday () in
+          if b then insert_timeout_handler ms (ms +. time) f
+      | _ ->
+          (* no idle handler *)
+          begin
+            (* attempt to run the first idle handler *)
+            match !idle_handler with
+            | (p,f) :: rem ->
+                idle_handler := rem;
+                let b = f () in
+                if b then insert_idle_handler p f
+            | [] -> ()
+          end
+     ) with e ->  Format.printf "FAIL TODO %a>>>>@." Exn_printer.exn_printer e;
+       if debug then
+         raise e
   done
 end
 
@@ -194,4 +227,4 @@ let () =
 (***********************)
 
 let () =
-  Gnat_Scheduler.main_loop Gnat_Protocol.push_request_string
+  Gnat_Scheduler.main_loop Gnat_Protocol.push_request_string Gnat_Protocol.length_notif Gnat_Protocol.communicate_notification
