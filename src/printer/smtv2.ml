@@ -99,7 +99,8 @@ let ident_printer () =
       "Bool"; "Int"; "Real"; "BitVec"; "Array";
 
      (* Other stuff that Why3 seems to need *)
-      "unsat";"sat";
+      "unsat"; "sat";
+
       "true"; "false";
       "const";
       "abs";

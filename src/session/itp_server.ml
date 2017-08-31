@@ -83,11 +83,6 @@ let loaded_strategies = ref []
 (****** Exception handling *********)
 
 let p s id =
-(*
-  let tables = match (Session_itp.get_table s id) with
-  | None -> Args_wrapper.build_naming_tables (Session_itp.get_task s id)
-  | Some tables -> tables in
- *)
   let _,tables = Session_itp.get_task s id in
   let pr = tables.Trans.printer in
   let apr = tables.Trans.aprinter in
@@ -330,9 +325,9 @@ let print_notify fmt n =
            fprintf fmt "node change %d Proof_status_change res=%a obsolete=%b limits=<TODO>"
                    ni Controller_itp.print_status st b
       end
-  | New_node (ni, _pni, _nt,  _nf, _d) -> fprintf fmt "new node %d" ni
+  | New_node (ni, pni, _nt,  _nf, _d) -> fprintf fmt "new node = %d, parent = %d" ni pni
   | Remove _ni                         -> fprintf fmt "remove"
-  | Next_Unproven_Node_Id (_ni, _nj)   -> fprintf fmt "next unproven node_id"
+  | Next_Unproven_Node_Id (ni, nj)   -> fprintf fmt "next unproven node_id from %d is %d" ni nj
   | Initialized _gi                    -> fprintf fmt "initialized"
   | Saved                              -> fprintf fmt "saved"
   | Message msg                        ->
@@ -790,7 +785,7 @@ end
         let session = d.cont.Controller_itp.controller_session in
         (match node with
         | APn pr_node ->
-            let task,_table = Session_itp.get_task ~do_intros:false session pr_node in
+            let task = Session_itp.get_raw_task session pr_node in
             let b = label_detection task in
             if b then
               (focused_node := Focus_on node;
@@ -902,7 +897,13 @@ end
 
   (* -- send the task -- *)
   let task_of_id d id do_intros loc =
-    let task,tables = get_task ~do_intros d.cont.controller_session id in
+    let task,tables =
+      if do_intros then get_task d.cont.controller_session id
+      else
+        let task = get_raw_task d.cont.controller_session id in
+        let tables = Args_wrapper.build_naming_tables task in
+        task,tables
+    in
     (* This function also send source locations associated to the task *)
     let loc_color_list = if loc then get_locations task else [] in
     let task_text =
@@ -1154,6 +1155,22 @@ end
     C.clean_session d.cont ~removed
 
 
+  let remove_node nid =
+    let d = get_server_data () in
+    let n = any_from_node_ID nid in
+    begin
+      try
+        Session_itp.remove_subtree
+          d.cont.controller_session n
+          ~notification:(notify_change_proved d.cont)
+          ~removed:(fun x ->
+                    let nid = node_ID_from_any x in
+                    remove_any_node_ID x;
+                    P.notify (Remove nid))
+      with RemoveError -> (* TODO send an error instead of information *)
+        P.notify (Message (Information "Cannot remove attached proof nodes or theories, and proof_attempt that did not yet return"))
+    end
+
   (* ----------------- Save session --------------------- *)
   let save_session () =
     let d = get_server_data () in
@@ -1191,7 +1208,16 @@ end
     (Qnotask (fun _cont _args ->  replay_session (); "replay in progress, be patient"))
 
   let () = register_command "clean" "remove unsuccessful proof attempts that are below proved goals"
-    (Qnotask (fun _cont _args ->  clean_session (); "Cleaning in progress"))
+    (Qnotask (fun _cont _args ->  clean_session (); "Cleaning done"))
+
+(* TODO: should this remove the current selected node ?
+  let () = register_command
+             "remove_node" "removes a proof attempt or a transformation"
+             (Qnotask (fun _cont args ->
+                       match args with
+                       | [x]
+                       clean_session (); "Remove node done"))
+ *)
 
   (* ---------------- Mark obsolete ------------------ *)
   let mark_obsolete n =
@@ -1279,19 +1305,7 @@ end
         | _ -> focused_node := Focus_on any)
     | Unfocus_req ->
         focused_node := Unfocused
-    | Remove_subtree nid           ->
-        let n = any_from_node_ID nid in
-        begin
-        try
-          Session_itp.remove_subtree d.cont.controller_session n
-            ~notification:(notify_change_proved d.cont)
-            ~removed:(fun x ->
-                        let nid = node_ID_from_any x in
-                        remove_any_node_ID x;
-                        P.notify (Remove nid))
-        with RemoveError -> (* TODO send an error instead of information *)
-          P.notify (Message (Information "Cannot remove attached proof nodes or theories, and proof_attempt that did not yet return"))
-        end
+    | Remove_subtree nid           -> remove_node nid
     | Copy_paste (from_id, to_id)    ->
         let from_any = any_from_node_ID from_id in
         let to_any = any_from_node_ID to_id in
