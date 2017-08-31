@@ -1,6 +1,0 @@
-theory A
-  namespace S
-    type t
-    type t
-  end
-end

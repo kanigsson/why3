@@ -1,4 +1,0 @@
-theory Records
-  type t = { a:int; b:int }
-  goal g1 : let t = { a = 1 } in true
-end

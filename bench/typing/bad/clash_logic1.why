@@ -1,4 +1,0 @@
-theory Test
-  function c : int
-  function c : int
-end

@@ -1,3 +1,0 @@
-theory Test
-  type t 'a 'a
-end

@@ -1,6 +1,0 @@
-
-module M
-
-  val f (x:int) : unit writes { 1 }
-
-end

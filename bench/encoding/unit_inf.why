@@ -1,4 +1,0 @@
-theory Unit
-    type unit
-    function unit : unit
-end

@@ -1,3 +1,0 @@
-theory Test
-  axiom A : forall x:int. (x : real) = x
-end

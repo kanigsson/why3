@@ -1,5 +1,0 @@
-theory Main
-    type shell 'a = Shell 'a
-
-    type test3 'a = Test3 (shell (test3 'a))
-end

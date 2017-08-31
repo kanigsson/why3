@@ -1,5 +1,0 @@
-theory Main
-    type t 'a
-
-    type test1 'a = Test1 (t (test1 'a))
-end

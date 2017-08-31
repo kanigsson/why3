@@ -1,3 +1,0 @@
-theory True
-  goal True : true
-end
