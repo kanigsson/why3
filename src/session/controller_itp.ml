@@ -503,23 +503,28 @@ let schedule_transformation_r c id name args ~callback =
   let apply_trans () =
     (* TODO: use get_raw_task instead, and make only the needed intros
        or alternatively, use 'revert' *)
+(*
     let task,table = get_task c.controller_session id in
+ *)
+ (*
+   let task = get_raw_task c.controller_session id in
+    let table = Args_wrapper.build_naming_tables task in
+  *)
     begin
       try
         let subtasks =
-          Trans.apply_transform_args name c.controller_env args table task in
-        (* if result is same as input task, consider it as a failure *)
-        begin
-          match subtasks with
-          | [t'] when Task.task_equal t' task ->
-             callback (TSfailed (id, Noprogress))
-          | _ ->
-             let tid = graft_transf c.controller_session id name args subtasks in
-             callback (TSdone tid)
-        end
-      with e when not (Debug.test_flag Debug.stack_trace) ->
+          apply_trans_to_goal ~allow_no_effect:false
+                              c.controller_session c.controller_env name args id
+        in
+        let tid = graft_transf c.controller_session id name args subtasks in
+        callback (TSdone tid)
+      with
+      | Exit ->
+         (* if result is same as input task, consider it as a failure *)
+         callback (TSfailed (id, Noprogress))
+      | e when not (Debug.test_flag Debug.stack_trace) ->
         (* Format.eprintf
-          "@[Exception raised in Trans.apply_transform %s:@ %a@.@]"
+          "@[Exception raised in Session_itp.apply_trans_to_goal %s:@ %a@.@]"
           name Exn_printer.exn_printer e; TODO *)
         callback (TSfailed (id, e))
     end;
@@ -792,6 +797,7 @@ let replay ?(obsolete_only=true) ?(use_steps=false)
                              ~notification
       end in
 
+  if !count = 0 then final_callback !report else
   (* Calling replay on all the proof_attempts of the session *)
   Session_itp.session_iter_proof_attempt replay_pa session
 
