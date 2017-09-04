@@ -10,9 +10,6 @@ module Gnat_Protocol = struct
   let requests = ref []
 
   let push_one_request_string (s: string) =
-    let oc = open_out "pata.out" in
-    Printf.fprintf oc "%s\n" s;
-    close_out oc;
     let r = parse_request s in
     requests := r :: !requests
 
@@ -40,9 +37,6 @@ module Gnat_Protocol = struct
   let communicate_notification () =
     try
       let n = Queue.pop notification_queue in
-      let oc = open_out "pata.out" in
-      Printf.fprintf oc "Depop \n";
-      close_out oc;
 (* TODO think of a better way of separating stuff than > *)
       Format.printf "%a>>>>@." print_notification n
     with
@@ -131,7 +125,7 @@ let main_loop treat_requests length_notif communicate_notification =
             (* TODO why 0.1 ? *)
             let (_, tonotify, _) = Unix.select [] [Unix.stdout] [] 0.1 in
             if tonotify != [] then
-              for i = 0 to length_notif() do
+              for _i = 0 to length_notif() do
                 try communicate_notification () with _ -> ()
               done
             else
