@@ -29,8 +29,6 @@ let debug = Debug.register_info_flag
     ~desc:"of@ the@ progression@ of@ a@ replay"
     "replay"
 
-let () = Debug.set_flag debug
-
 let files = Queue.create ()
 (*
 let opt_stats = ref true
@@ -235,8 +233,9 @@ let add_to_check_no_smoke some_merge_miss found_obs cont =
         exit 1
       end
   in
-  let callback _paid _pastatus =
-    Debug.dprintf debug "[Replay] callback on node paid pastatus@."
+  let callback paid pastatus =
+    Debug.dprintf debug "[Replay] callback on node paid=%a with pastatus=%a@."
+                  Session_itp.print_proofAttemptID paid Controller_itp.print_status pastatus
   in
   let notification _any =
     Debug.dprintf debug "[Replay] notified on node any@."

@@ -28,7 +28,10 @@ type proofNodeID = int
 type proofAttemptID = int
 
 let print_proofNodeID fmt id =
-  Format.fprintf fmt "%d" id
+  Format.fprintf fmt "proofNodeID<%d>" id
+
+let print_proofAttemptID fmt id =
+  Format.fprintf fmt "proofAttemptID<%d>" id
 
 type theory = {
   theory_name                   : Ident.ident;
@@ -546,7 +549,7 @@ let graft_proof_attempt ?file (s : session) (id : proofNodeID) (pr : Whyconf.pro
     let pa = { pa with limit = limit;
                proof_state = None;
                proof_obsolete = false} in
-    Hprover.replace pn.proofn_attempts pr id;
+    (* Hprover.replace pn.proofn_attempts pr id; useless *)
     Hint.replace s.proofAttempt_table id pa;
     id
   with Not_found ->
@@ -766,6 +769,8 @@ let update_theory_node notification s th =
   let proved = List.for_all (pn_proved s) goals in
   if proved <> th_proved s th then
     begin
+      Debug.dprintf debug "[Session] setting theory %s to status proved=%b@."
+                    th.theory_name.Ident.id_string proved;
       Hid.replace s.th_state (theory_name th) proved;
       notification (ATh th);
       try let p = theory_parent s th in
@@ -781,6 +786,8 @@ let rec update_goal_node notification s id =
   let proved = List.exists (tn_proved s) tr_list || List.exists pa_ok pa_list in
   if proved <> pn_proved s id then
     begin
+      Debug.dprintf debug "[Session] setting goal node %a to status proved=%b@."
+                    print_proofNodeID id proved;
       Hpn.replace s.pn_state id proved;
       notification (APn id);
       match get_proof_parent s id with
