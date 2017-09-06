@@ -460,8 +460,7 @@ let further_split (c: Controller_itp.controller) (goal: goal_id) =
        in
        (* Pass empty function for notification as there is no IDE to update *)
        C.schedule_transformation c goal trans [] ~callback:callback
-         ~notification:(fun (_x) -> ());
-       Gnat_scheduler.wait_for_idle ()
+         ~notification:(fun (_x) -> ())
    in
    split (find_next_transformation c.Controller_itp.controller_session goal)
 
@@ -599,8 +598,7 @@ let apply_split_goal_if_needed c g =
     ()
   else
     C.schedule_transformation c g first_transform []
-      ~callback:(fun _ -> ()) ~notification:(fun _ -> ());
-    Gnat_scheduler.wait_for_idle ()
+      ~callback:(fun _ -> ()) ~notification:(fun _ -> ())
 
 exception Found_loc of Gnat_loc.loc
 

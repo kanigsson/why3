@@ -240,8 +240,6 @@ let normal_handle_one_subp c subp =
    let s = c.Controller_itp.controller_session in
    if C.matches_subp_filter s subp then begin
      C.init_subp_vcs c subp;
-     Gnat_scheduler.wait_for_idle ();
-     (* TODO wait until finished *)
      let s = c.Controller_itp.controller_session in
      Gnat_objectives.iter_leaf_goals s subp (register_goal s)
    end
@@ -280,20 +278,18 @@ let ending () =
   Util.timing_step_completed "gnatwhy3.save_session";
   Gnat_objectives.iter (report_messages c);
   Gnat_report.print_messages ();
-   (* Dump profiling data (when compiled with profiling enabled) to file whose
-      name is based on the processed .mlw file; otherwise profile data from
-      several compilation would be written to a single gmon.out file and
-      overwrite each other. When compiled with profiling disabled it has no
-      visible effect. Note: we set the filename just before the program exit
-      to not interfere with profiling of provers.
+  (* Dump profiling data (when compiled with profiling enabled) to file whose
+     name is based on the processed .mlw file; otherwise profile data from
+     several compilation would be written to a single gmon.out file and
+     overwrite each other. When compiled with profiling disabled it has no
+     visible effect. Note: we set the filename just before the program exit
+     to not interfere with profiling of provers.
    *)
-   let basename =
-     Filename.chop_extension
-       (Filename.basename Gnat_config.filename) in
-   Unix.putenv "GMON_OUT_PREFIX" (basename ^ "_gnatwhy3_gmon.out")
+  let basename =
+    Filename.chop_extension
+      (Filename.basename Gnat_config.filename) in
+  Unix.putenv "GMON_OUT_PREFIX" (basename ^ "_gnatwhy3_gmon.out")
 
 
 let _ =
-   (*Gnat_scheduler.timeout ~ms:125 beginning;*)
-   (*Gnat_scheduler.timeout ~ms:125 ending;*)
-   Gnat_scheduler.main_loop ending
+  Gnat_scheduler.main_loop ending
