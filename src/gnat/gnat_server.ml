@@ -46,6 +46,9 @@ end
 
 module Gnat_Scheduler = struct
 
+(* Same arbitrary value as in Why3 *)
+let multiplier = 3
+
 (* the private list of functions to call on idle, sorted higher
        priority first. *)
 let idle_handler : (int * (unit -> bool)) list ref = ref []

@@ -6,6 +6,11 @@ module Gnat_scheduler = struct
      idled function
    *)
 
+    (* Put an arbitrarily high multiplier here to pass more task to the
+       why3server when in gnatwhy3 mode
+    *)
+    let multiplier = 50
+
     (* the private list of functions to call on idle. *)
     let idle_handler : (unit -> bool) list ref = ref []
 
