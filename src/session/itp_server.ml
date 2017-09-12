@@ -385,7 +385,7 @@ let () =
   ]
 
   type server_data =
-    { task_driver : Driver.driver;
+    { (* task_driver : Driver.driver; *)
       cont : Controller_itp.controller;
       send_source: bool;
       (* If true the server is parametered to send source mlw files as
@@ -560,9 +560,11 @@ let get_modified_node n =
   | Task (nid, _, _) -> Some nid
   | File_contents _ -> None
 
+
 type focus =
   | Unfocused
-  | Focus_on of Session_itp.any
+(* We can focus on several nodes at once *)
+  | Focus_on of Session_itp.any list
   | Wait_focus
 
 (* Focus on a node *)
@@ -580,11 +582,12 @@ module P = struct
 
   (* true if nid is below f_node or does not exists (in which case the
      notification is a remove). false if not below.  *)
-  let is_below s nid f_node =
+  let is_below s nid f_nodes =
     let any = try Some (any_from_node_ID nid) with _ -> None in
     match any with
     | None -> true
-    | Some any -> Session_itp.is_below s any f_node
+    | Some any ->
+        List.exists (Session_itp.is_below s any) f_nodes
 
   let notify n =
     let d = get_server_data() in
@@ -592,11 +595,11 @@ module P = struct
     match !focused_node with
     | Wait_focus -> () (* Do not notify at all *)
     | Unfocused -> Pr.notify n
-    | Focus_on f_node ->
+    | Focus_on f_nodes ->
         let updated_node = get_modified_node n in
         match updated_node with
         | None -> Pr.notify n
-        | Some nid when is_below s nid f_node ->
+        | Some nid when is_below s nid f_nodes ->
             Pr.notify n
         | _ -> ()
 
@@ -670,6 +673,7 @@ end
       P.notify (Message (Parse_Or_Type_Error (Loc.dummy_position, s)));
       false
 
+(*
   let task_driver config env =
     try
       let main = Whyconf.get_main config in
@@ -680,7 +684,7 @@ end
     with e ->
       Format.eprintf "Fatal error while loading itp driver: %a@." Exn_printer.exn_printer e;
       exit 1
-
+*)
 
   (* -----------------------------------   ------------------------------------- *)
 
@@ -771,6 +775,11 @@ end
         {name; proved}
 *)
 
+  let add_focused_node node =
+    match !focused_node with
+    | Focus_on l -> focused_node := Focus_on (node :: l)
+    | _ -> focused_node := Focus_on [node]
+
   (* Focus on label: this is used to automatically focus on the first task
      having a given property (label_detection) in the session tree. To change
      the property, one need to call function register_label_detection. *)
@@ -784,8 +793,7 @@ end
             let task = Session_itp.get_raw_task session pr_node in
             let b = label_detection task in
             if b then
-              (focused_node := Focus_on node;
-               get_focused_label := None)
+              add_focused_node node
         | _ -> ())
     | None -> ()
 
@@ -966,9 +974,9 @@ end
     let ses,use_shapes = Session_itp.load_session f in
     Debug.dprintf debug "[ITP server] creating controller@.";
     let c = create_controller config env ses in
-    let task_driver = task_driver config env in
+    (* let task_driver = task_driver config env in*)
     server_data := Some
-                     { task_driver = task_driver;
+                     { (* task_driver = task_driver; *)
                        cont = c;
                        send_source = send_source;
                      };
@@ -995,7 +1003,13 @@ end
     Debug.dprintf debug "[ITP server] reloading source files@.";
     let b = reload_files d.cont ~use_shapes in
     if b then
-      init_and_send_the_tree ()
+      begin
+        (* Send the tree *)
+        init_and_send_the_tree ();
+        (* After initial sending, we don't check anymore that there is a need to
+           focus on a specific node. *)
+        get_focused_label := None
+      end
     else
       load_files_session ()
 
@@ -1295,8 +1309,8 @@ end
         let any = any_from_node_ID nid in
         (match any with
         | APa pa ->
-          focused_node := Focus_on (APn (Session_itp.get_proof_attempt_parent s pa))
-        | _ -> focused_node := Focus_on any)
+          focused_node := Focus_on [APn (Session_itp.get_proof_attempt_parent s pa)]
+        | _ -> focused_node := Focus_on [any])
     | Unfocus_req ->
         focused_node := Unfocused
     | Remove_subtree nid           -> remove_node nid
