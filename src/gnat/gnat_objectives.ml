@@ -868,11 +868,11 @@ let run_goal ~cntexample ?limit ~callback c prover g =
       if old_file = None then
         let check = get_objective g in
         let new_file = Gnat_manual.create_prover_file c g check prover in
-        C.schedule_edition ~no_edit:true ~do_check_proof:true
-          c g prover ~file:new_file ~callback ~notification
+        C.schedule_edition (*~no_edit:true ~do_check_proof:true*)
+          c g prover (*~file:new_file*) ~callback ~notification
       else
         C.schedule_proof_attempt ~counterexmp:cntexample
-          ~limit:Call_provers.empty_limit ?proof_script:old_file c g prover
+          ~limit:Call_provers.empty_limit (*?proof_script:old_file*) c g prover
           ~callback ~notification
     end
   else
