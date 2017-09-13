@@ -17,9 +17,11 @@ open Session_itp
 (** {2 State of a proof or transformation in progress} *)
 
 type proof_attempt_status =
+(*
     | Unedited (** editor not yet run for interactive proof *)
     | JustEdited (** edited but not run yet *)
-    | Detached (** parent goal has no task, is detached *)
+ *)
+  | Detached (** parent goal has no task, is detached *)
     | Interrupted (** external proof has never completed *)
     | Scheduled (** external proof attempt is scheduled *)
     | Running (** external proof attempt is in progress *)
@@ -53,6 +55,10 @@ module type Scheduler = sig
     that allows the register functions to call, and call them
     depending on some time constraints: after a given delay, or simply
     when there is no more tasks with higher priority. *)
+
+    val blocking: bool
+    (** Set to true when the scheduler should wait for results of why3server
+        (script), false otherwise (ITP which needs reactive scheduling) *)
 
     val multiplier: int
     (** Number of allowed task given to why3server is this number times the
