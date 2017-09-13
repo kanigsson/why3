@@ -46,6 +46,8 @@ end
 
 module Gnat_Scheduler = struct
 
+let blocking = false
+
 (* Same arbitrary value as in Why3 *)
 let multiplier = 3
 

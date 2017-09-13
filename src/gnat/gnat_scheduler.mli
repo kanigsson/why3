@@ -1,5 +1,7 @@
 module Gnat_scheduler : sig
 
+    val blocking: bool
+
     val multiplier: int
 
     val timeout: ms:int -> (unit -> bool) -> unit

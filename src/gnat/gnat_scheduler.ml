@@ -6,6 +6,8 @@ module Gnat_scheduler = struct
      idled function
    *)
 
+    let blocking = true
+
     (* Put an arbitrarily high multiplier here to pass more task to the
        why3server when in gnatwhy3 mode
     *)
@@ -78,7 +80,7 @@ module Gnat_scheduler = struct
               if b then insert_timeout_handler ms (ms +. time) f
            | _ ->
              (* TODO arbitrary delay *)
-             let (_: _ * _ * _) = (Unix.select [] [] [] 0.1) in ()
+             (*let (_: _ * _ * _) = (Unix.select [] [] [] 0.1) in*) ()
 
          done
        with Exit -> ending ()
