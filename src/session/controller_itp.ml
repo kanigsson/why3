@@ -31,19 +31,21 @@ let () = Exn_printer.register
 
 (** State of a proof *)
 type proof_attempt_status =
-    | Unedited (** editor not yet run for interactive proof *)
-    | JustEdited (** edited but not run yet *)
-    | Interrupted (** external proof has never completed *)
-    | Scheduled (** external proof attempt is scheduled *)
-    | Running (** external proof attempt is in progress *)
-    | Done of Call_provers.prover_result (** external proof done *)
-    | InternalFailure of exn (** external proof aborted by internal error *)
-    | Uninstalled of Whyconf.prover (** prover is uninstalled *)
+  | Unedited (** editor not yet run for interactive proof *)
+  | JustEdited (** edited but not run yet *)
+  | Detached (** parent goal has no task, is detached *)
+  | Interrupted (** external proof has never completed *)
+  | Scheduled (** external proof attempt is scheduled *)
+  | Running (** external proof attempt is in progress *)
+  | Done of Call_provers.prover_result (** external proof done *)
+  | InternalFailure of exn (** external proof aborted by internal error *)
+  | Uninstalled of Whyconf.prover (** prover is uninstalled *)
 
 let print_status fmt st =
   match st with
   | Unedited          -> fprintf fmt "Unedited"
   | JustEdited        -> fprintf fmt "JustEdited"
+  | Detached          -> fprintf fmt "Detached"
   | Interrupted       -> fprintf fmt "Interrupted"
   | Scheduled         -> fprintf fmt "Scheduled"
   | Running           -> fprintf fmt "Running"
@@ -143,10 +145,7 @@ module PSession = struct
     | Session -> "", Hstr.fold (fun _ f -> n (File f)) (get_files s) []
     | File f ->
        (file_name f),
-       List.fold_right
-          (fun th -> n (Theory th))
-          (file_detached_theories f)
-          (List.fold_right (fun th -> n (Theory th)) (file_theories f) [])
+       List.fold_right (fun th -> n (Theory th)) (file_theories f) []
     | Theory th ->
        let id = theory_name th in
        let name = id.Ident.id_string in
@@ -224,7 +223,12 @@ module Make(S : Scheduler) = struct
 
 let scheduled_proof_attempts = Queue.create ()
 
-let prover_tasks_in_progress = Queue.create ()
+let prover_tasks_in_progress = Hashtbl.create 17
+
+(* We need to separate tasks that are edited from proofattempt in progress
+   because we are not using why3server for the edited proofs and timeout_handler
+   rely on a loop on why3server's results. *)
+let prover_tasks_edited = Queue.create ()
 
 let timeout_handler_running = ref false
 
@@ -313,65 +317,95 @@ let build_prover_call ?proof_script ~cntexample c id pr limit callback ores =
   let with_steps = Call_provers.(limit.limit_steps <> empty_limit.limit_steps) in
   let command =
     Whyconf.get_complete_command config_pr ~with_steps in
-  let task = Session_itp.get_raw_task c.controller_session id in
-  let call =
-    Driver.prove_task ?old:proof_script ~cntexample:cntexample ~inplace:false ~command
-                      ~limit (*?name_table:table*) driver task
-  in
-  let pa = (c.controller_session,id,pr,proof_script,callback,false,call,ores) in
-  Queue.push pa prover_tasks_in_progress
+  try
+    let task = Session_itp.get_raw_task c.controller_session id in
+    Debug.dprintf debug_sched "[build_prover_call] Script file = %a@."
+                  (Pp.print_option Pp.string) proof_script;
+    let inplace = config_pr.Whyconf.in_place in
+    let call =
+      Driver.prove_task ?old:proof_script ~cntexample:cntexample ~inplace ~command
+                        ~limit driver task
+    in
+    let pa = (c.controller_session,id,pr,callback,false,call,ores) in
+    Hashtbl.replace prover_tasks_in_progress call pa
+  with Not_found (* goal has no task, it is detached *) ->
+       callback Detached
 
 let update_observer () =
   let scheduled = Queue.length scheduled_proof_attempts in
-  let waiting_or_running = Queue.length prover_tasks_in_progress in
+  let waiting_or_running = Hashtbl.length prover_tasks_in_progress in
   let running = !number_of_running_provers in
   !observer scheduled (waiting_or_running - running) running
 
 let timeout_handler () =
   (* examine all the prover tasks in progress *)
+  (* When no tasks are there, probably no tasks were scheduled and the server
+     was not launched so getting results could fail. *)
+  if Hashtbl.length prover_tasks_in_progress != 0 then begin
+    let results = Call_provers.forward_results ~blocking:false (* TODO *) in
+    while not (Queue.is_empty results) do
+      let (call, prover_update) = Queue.pop results in
+      let c = try Some (Hashtbl.find prover_tasks_in_progress call)
+        with Not_found -> None in
+      match c with
+      | None -> () (* we do nothing. We probably received ProverStarted after
+                      ProverFinished because what is sent to and received from
+                      the server is not ordered. *)
+      | Some c ->
+      begin
+        let (ses,id,pr,callback,started,call,ores) = c in
+
+        match prover_update with
+        | Call_provers.NoUpdates -> ()
+        | Call_provers.ProverStarted ->
+            assert (not started);
+            callback Running;
+            incr number_of_running_provers;
+            Hashtbl.replace prover_tasks_in_progress call
+              (ses,id,pr,callback,true,call,ores)
+        | Call_provers.ProverFinished res ->
+            Hashtbl.remove prover_tasks_in_progress call;
+            if started then decr number_of_running_provers;
+            let res = Opt.fold fuzzy_proof_time res ores in
+            (* inform the callback *)
+            callback (Done res)
+        | Call_provers.ProverInterrupted ->
+            Hashtbl.remove prover_tasks_in_progress call;
+            if started then decr number_of_running_provers;
+            (* inform the callback *)
+            callback (Interrupted)
+        | Call_provers.InternalFailure exn ->
+            Hashtbl.remove prover_tasks_in_progress call;
+            if started then decr number_of_running_provers;
+            (* inform the callback *)
+            callback (InternalFailure (exn))
+      end
+    done
+  end;
+
+  (* Check for editor calls which are not finished *)
   let q = Queue.create () in
-  while not (Queue.is_empty prover_tasks_in_progress) do
-    let (ses,id,pr,pr_script,callback,started,call,ores) as c =
-      Queue.pop prover_tasks_in_progress in
-    match Call_provers.query_call call with
+  while not (Queue.is_empty prover_tasks_edited) do
+    (* call is an EditorCall *)
+    let (_ses,_id,_pr,callback,_started,call,ores) as c =
+      Queue.pop prover_tasks_edited in
+    let prover_update = Call_provers.query_call call in
+    match prover_update with
     | Call_provers.NoUpdates -> Queue.add c q
-    | Call_provers.ProverStarted ->
-       assert (not started);
-       callback Running;
-       incr number_of_running_provers;
-       Queue.add (ses,id,pr,pr_script,callback,true,call,ores) q
     | Call_provers.ProverFinished res ->
-       if started then decr number_of_running_provers;
        let res = Opt.fold fuzzy_proof_time res ores in
-       (* update the session *)
-       update_proof_attempt ses id pr res;
        (* inform the callback *)
        callback (Done res)
-(*
-    | Call_provers.ProverFinished res (* when pr_script <> None *) ->
-       if started then decr number_of_running_provers;
-       let res = Opt.fold fuzzy_proof_time res ores in
-       (* update the session *)
-       update_proof_attempt ~obsolete:true ses id pr res;
-       (* inform the callback *)
-       callback (Done res)
-*)
-    | Call_provers.ProverInterrupted ->
-       if started then decr number_of_running_provers;
-       (* inform the callback *)
-       callback (Interrupted)
-    | Call_provers.InternalFailure exn ->
-       if started then decr number_of_running_provers;
-       (* inform the callback *)
-       callback (InternalFailure (exn))
+    | _ -> assert (false) (* An edition can only return Noupdates or finished *)
   done;
-  Queue.transfer q prover_tasks_in_progress;
-  (* if the number of prover tasks is less than 3 times the maximum
+  Queue.transfer q prover_tasks_edited;
+
+  (* if the number of prover tasks is less than S.multiplier times the maximum
      number of running provers, then we heuristically decide to add
      more tasks *)
   begin
     try
-      for _i = Queue.length prover_tasks_in_progress
+      for _i = Hashtbl.length prover_tasks_in_progress
           to S.multiplier * !max_number_of_running_provers do
         let (c,id,pr,limit,proof_script,callback,cntexample,ores) =
           Queue.pop scheduled_proof_attempts in
@@ -389,12 +423,18 @@ let timeout_handler () =
   true
 
 let interrupt () =
-  while not (Queue.is_empty prover_tasks_in_progress) do
-    let (_ses,_id,_pr,_proof_script,callback,_started,_call,_ores) =
-      Queue.pop prover_tasks_in_progress in
-    (* TODO: apply some Call_provers.interrupt_call call *)
+  (* Interrupt provers *)
+  Hashtbl.iter (fun _k e ->
+    let (_, _, _, callback, _, _, _) = e in callback Interrupted)
+    prover_tasks_in_progress;
+  Hashtbl.clear prover_tasks_in_progress;
+  (* Do not interrupt editors
+  while not (Queue.is_empty prover_tasks_edited) do
+    let (_ses,_id,_pr,callback,_started,_call,_ores) =
+      Queue.pop prover_tasks_edited in
     callback Interrupted
   done;
+  *)
   number_of_running_provers := 0;
   while not (Queue.is_empty scheduled_proof_attempts) do
     let (_c,_id,_pr,_limit,_proof_script,callback,_cntexample,_ores) =
@@ -410,44 +450,41 @@ let run_timeout_handler () =
       S.timeout ~ms:default_delay_ms timeout_handler;
     end
 
-let schedule_proof_attempt_r ?proof_script c id pr ~counterexmp ~limit ~callback =
-  let s = c.controller_session in
-  let adaptlimit,ores =
+let schedule_proof_attempt c id pr
+                           ~counterexmp ~limit ~callback ~notification =
+  let ses = c.controller_session in
+  let callback panid s =
+    (match s with
+    | Scheduled | Running -> update_goal_node notification ses id
+    | Done res ->
+        update_proof_attempt ~obsolete:false notification ses id pr res;
+        update_goal_node notification ses id
+    | _ -> ());
+    callback panid s
+  in
+  let adaptlimit,ores,proof_script =
     try
-      let h = get_proof_attempt_ids s id in
+      let h = get_proof_attempt_ids ses id in
       let pa = Hprover.find h pr in
-      let a = get_proof_attempt_node s pa in
+      let a = get_proof_attempt_node ses pa in
       let old_res = a.proof_state in
       let config_pr,_ = Hprover.find c.controller_provers pr in
       let interactive = config_pr.Whyconf.interactive in
       let use_steps = Call_provers.(limit.limit_steps <> empty_limit.limit_steps) in
       let limit = adapt_limits ~interactive ~use_steps limit a in
-      limit, old_res
-    with Not_found | Session_itp.BadID -> limit,None
+      let script = Opt.map (fun s ->
+                            Debug.dprintf debug_sched "Script file = %s@." s;
+                            Filename.concat (get_dir ses) s) a.proof_script
+      in
+      limit, old_res, script
+    with Not_found | Session_itp.BadID -> limit,None,None
   in
-  let panid = graft_proof_attempt ~limit s id pr in
+  let panid = graft_proof_attempt ~limit ses id pr in
   Queue.add (c,id,pr,adaptlimit,proof_script,callback panid,counterexmp,ores)
             scheduled_proof_attempts;
   callback panid Scheduled;
   run_timeout_handler ()
 
-let schedule_proof_attempt ?proof_script c id pr
-                           ~counterexmp ~limit ~callback ~notification =
-  let callback panid s =
-    (match s with
-    | Scheduled | Running -> update_goal_node notification c.controller_session id
-    | Done res ->
-        update_proof_attempt ~obsolete:false c.controller_session id pr res;
-        update_goal_node notification c.controller_session id
-    | _ -> ());
-    callback panid s
-  in
-  (* proof_script is specific to interactive manual provers *)
-  let session_dir = Session_itp.get_dir c.controller_session in
-  let proof_script =
-    Opt.map (Sysutil.absolutize_filename session_dir) proof_script
-  in
-  schedule_proof_attempt_r ?proof_script c id pr ~counterexmp ~limit ~callback
 
 
 (* replay *)
@@ -486,13 +523,17 @@ let find_prover notification c goal_id pr =
         end
 *)
 
-let replay_proof_attempt ?proof_script c pr limit (parid: proofNodeID) id ~callback ~notification =
+let replay_proof_attempt c pr limit (parid: proofNodeID) id ~callback ~notification =
   (* The replay can be done on a different machine so we need
      to check more things before giving the attempt to the scheduler *)
   match find_prover notification c parid pr with
   | None -> callback id (Uninstalled pr)
   | Some pr ->
-     schedule_proof_attempt ?proof_script c parid pr ~counterexmp:false ~limit ~callback ~notification
+     try
+       let _ = get_raw_task c.controller_session parid in
+       schedule_proof_attempt c parid pr ~counterexmp:false ~limit ~callback ~notification
+     with Not_found ->
+       callback id Detached
 
 
 (* TODO to be simplified *)
@@ -540,7 +581,6 @@ let update_edit_external_proof c pn ?panid pr =
   in
   let ch = open_out file in
   let fmt = formatter_of_out_channel ch in
-  (* Name table is only used in ITP printing *)
   Driver.print_task ~cntexample:false ?old driver fmt task;
   Opt.iter close_in old;
   close_out ch;
@@ -548,83 +588,70 @@ let update_edit_external_proof c pn ?panid pr =
 
 exception Editor_not_found
 
-let schedule_edition c id pr ~no_edit ~do_check_proof ?file ~callback ~notification =
+let schedule_edition c id pr ~callback ~notification =
   Debug.dprintf debug_sched "[Sched] Scheduling an edition@.";
   let config = c.controller_config in
   let session = c.controller_session in
   let prover_conf = Whyconf.get_prover_config config pr in
   let session_dir = Session_itp.get_dir session in
-
   let limit = Call_provers.empty_limit in
   (* Make sure editor exists. Fails otherwise *)
   let editor =
     match prover_conf.Whyconf.editor with
     | "" -> raise Editor_not_found
     | s ->
-        try
-          let ed = Whyconf.editor_by_id config s in
-          String.concat " " (ed.Whyconf.editor_command ::
-                             ed.Whyconf.editor_options)
-        with Not_found -> raise Editor_not_found
+       try
+         let ed = Whyconf.editor_by_id config s in
+         String.concat " " (ed.Whyconf.editor_command ::
+                              ed.Whyconf.editor_options)
+       with Not_found -> raise Editor_not_found
   in
   let proof_attempts_id = get_proof_attempt_ids session id in
   let panid =
-    try Some (Hprover.find proof_attempts_id pr) with
-    | _ -> None
+    try Hprover.find proof_attempts_id pr
+    with Not_found ->
+      let file = update_edit_external_proof c id pr in
+      let filename = Sysutil.relativize_filename session_dir file in
+      graft_proof_attempt session id pr ~file:filename ~limit
   in
-  (* make sure to actually create the file and the proof attempt *)
-  let panid, file =
-    match panid, file with
-    | None, None ->
-        let file = update_edit_external_proof c id pr in
-        let filename = Sysutil.relativize_filename session_dir file in
-        let panid = graft_proof_attempt c.controller_session id pr ~file:filename ~limit in
-        panid, file
-    | None, Some file ->
-        let panid = graft_proof_attempt c.controller_session id pr ~file ~limit in
-        let file = update_edit_external_proof c id ~panid pr in
-        panid, file
-    | Some panid, _ ->
-        let file = update_edit_external_proof c id ~panid pr in
-        panid, file
-  in
-
+  let pa = get_proof_attempt_node session panid in
   (* Notification node *)
-  let callback panid s = callback panid s;
-    match s with
-    | Scheduled | Running -> update_goal_node notification c.controller_session id
-    | Done _ ->
-        (* TODO *)
-        if do_check_proof then
-          let file = Sysutil.relativize_filename session_dir file in
-          replay_proof_attempt ~proof_script:file c pr Call_provers.empty_limit id
-            panid ~callback ~notification
-    | Interrupted | InternalFailure _ ->
-        (* TODO *)
-        if do_check_proof then
-          let file = Sysutil.relativize_filename session_dir file in
-          replay_proof_attempt ~proof_script:file c pr Call_provers.empty_limit id
-            panid ~callback ~notification
-    | _ -> ()
+  let callback panid s =
+    begin
+      match s with
+      | Scheduled | Running ->
+                     update_goal_node notification session id
+      | Done res ->
+         (* set obsolete to true since we do not know if the manual
+            proof was completed or not *)
+         Debug.dprintf debug_sched
+                       "Setting status of %a under parent %a to obsolete@."
+                       print_proofAttemptID panid print_proofNodeID id;
+         update_proof_attempt ~obsolete:true notification session id pr res;
+         update_goal_node notification session id
+      | Interrupted | InternalFailure _ -> ()
+      | _ -> ()
+    end;
+    callback panid s
   in
-
+  let file = Opt.get pa.proof_script in
+  let file = Filename.concat session_dir file in
   Debug.dprintf debug_sched "[Editing] goal %s with command '%s' on file %s@."
-    (Session_itp.get_proof_name session id).Ident.id_string
-    editor file;
-  if no_edit then
+                (Session_itp.get_proof_name session id).Ident.id_string
+                editor file;
+  let call = Call_provers.call_editor ~command:editor file in
+  callback panid Running;
+  Queue.add (c.controller_session,id,pr,callback panid,false,call,None)
+            prover_tasks_edited;
+  run_timeout_handler ()
+
+(* TODO get back no_edit ???
+ if no_edit then
     begin
       callback panid Running;
       callback panid Interrupted
     end
-  else
-    begin
-      let call = Call_provers.call_editor ~command:editor file in
-      callback panid Running;
-      let file = Sysutil.relativize_filename session_dir file in
-      Queue.add (c.controller_session,id,pr,Some file,callback panid,false,call,None)
-        prover_tasks_in_progress;
-      run_timeout_handler ()
-    end
+*)
 
 
 let schedule_transformation_r c id name args ~callback =
@@ -683,7 +710,7 @@ let run_strategy_on_goal
               callback (STSgoto (g,pc+1));
               let run_next () = exec_strategy (pc+1) strat g; false in
               S.idle ~prio:0 run_next
-           | Unedited | JustEdited | Uninstalled _ ->
+           | Unedited | JustEdited | Detached | Uninstalled _ ->
                          (* should not happen *)
                          assert false
          in
@@ -890,6 +917,7 @@ let replay ?(obsolete_only=true) ?(use_steps=false)
     | Uninstalled _ ->
        decr count;
        r := (id, pr, limits, Prover_not_installed) :: !r;
+    | Detached -> decr count
   in
 
   let session = c.controller_session in
@@ -917,8 +945,7 @@ let replay ?(obsolete_only=true) ?(use_steps=false)
           else
             Call_provers.{ pa.limit with limit_steps = empty_limit.limit_steps }
         in
-        let proof_script = pa.proof_script in
-        replay_proof_attempt ?proof_script c pr limit parid id
+        replay_proof_attempt c pr limit parid id
                              ~callback:(fun id s ->
                                         craft_report count s report parid pr limit pa;
                                         callback id s;
@@ -956,7 +983,7 @@ let bisect_proof_attempt ~notification c pa_id =
     | Interrupted ->
       Debug.dprintf debug "Bisecting interrupted.@."
     | Unedited | JustEdited -> assert false
-    | Uninstalled _ -> assert false
+    | Detached | Uninstalled _ -> assert false
     | InternalFailure exn ->
       (* Perhaps the test can be considered false in this case? *)
       Debug.dprintf debug "Bisecting interrupted by an error %a.@."
@@ -995,7 +1022,7 @@ let bisect_proof_attempt ~notification c pa_id =
             Exn_printer.exn_printer e end
  *)
            end
-      | Eliminate_definition.BSstep (rem,kont) ->
+      | Eliminate_definition.BSstep (_rem,kont) ->
 
          schedule_proof_attempt
            c goal_id prover
@@ -1006,12 +1033,12 @@ let bisect_proof_attempt ~notification c pa_id =
   in
   (* Run once the complete goal in order to verify its validity and
      update the proof attempt *)
-  let first_callback pa_id = function
+  let first_callback _pa_id = function
     (* this pa_id can be different from the first pa_id *)
     | Running | Scheduled -> ()
     | Interrupted ->
       Debug.dprintf debug "Bisecting interrupted.@."
-    | Unedited | JustEdited | Uninstalled _ -> assert false
+    | Unedited | JustEdited | Detached | Uninstalled _ -> assert false
     | InternalFailure exn ->
         Debug.dprintf debug "proof of the initial task interrupted by an error %a.@."
           Exn_printer.exn_printer exn
@@ -1022,9 +1049,9 @@ let bisect_proof_attempt ~notification c pa_id =
         let t = get_raw_task ses goal_id in
         let r = Eliminate_definition.bisect_step t in
         match r with
-        | Eliminate_definition.BSdone res ->
+        | Eliminate_definition.BSdone _res ->
           Debug.dprintf debug "Task can't be reduced.@."
-        | Eliminate_definition.BSstep (rem,kont) ->
+        | Eliminate_definition.BSstep (_rem,kont) ->
           set_timelimit res;
           schedule_proof_attempt
             c goal_id prover

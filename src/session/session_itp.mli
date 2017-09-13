@@ -62,7 +62,6 @@ val get_shape_version : session -> int
 val file_name : file -> string
 val file_format : file -> string option
 val file_theories : file -> theory list
-val file_detached_theories : file -> theory list
 
 (** Theory *)
 val theory_name : theory -> Ident.ident
@@ -282,13 +281,12 @@ val update_trans_node : notifier -> session -> transID -> unit
     necessary, propagates the update to ancestors. [notifier] is
     called on all nodes whose status changes *)
 
-
-val update_proof_attempt : ?obsolete:bool (*-> notifier*) -> session -> proofNodeID ->
+val update_proof_attempt : ?obsolete:bool -> notifier -> session -> proofNodeID ->
   Whyconf.prover -> Call_provers.prover_result -> unit
 (** [update_proof_attempt ?obsolete s id pr st] update the status of the
     corresponding proof attempt with [st].
     If [obsolete] is set to true, it marks the proof_attempt obsolete
-    direclty (useful for interactive prover).
+    directly (useful for interactive prover).
 *)
 
 val change_prover : notifier -> session -> proofNodeID -> Whyconf.prover -> Whyconf.prover -> unit

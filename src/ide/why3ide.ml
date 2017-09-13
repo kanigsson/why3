@@ -1140,6 +1140,8 @@ let on_selected_row r =
           task_view#source_buffer#set_text "Unedited"
       | Controller_itp.JustEdited ->
           task_view#source_buffer#set_text "Just edited"
+      | Controller_itp.Detached ->
+          task_view#source_buffer#set_text "Detached"
       | Controller_itp.Interrupted ->
           task_view#source_buffer#set_text "Interrupted"
       | Controller_itp.Scheduled ->
@@ -1381,6 +1383,7 @@ let image_of_pa_status ~obsolete pa =
   | Controller_itp.Scheduled -> !image_scheduled
   | Controller_itp.Running -> !image_running
   | Controller_itp.InternalFailure _e -> !image_failure
+  | Controller_itp.Detached -> !image_undone (* TODO !image_detached *)
   | Controller_itp.Uninstalled _p -> !image_undone (* TODO !image_uninstalled *)
   | Controller_itp.Done r ->
     let pr_answer = r.Call_provers.pr_answer in
@@ -1427,8 +1430,11 @@ let set_status_and_time_column ?limit row =
     | NTheory
     | NTransformation
     | NGoal ->
-      if detached then
-        !image_valid_obs
+       if detached then
+         begin
+           goals_model#set ~row:row#iter ~column:time_column "(detached)";
+           !image_valid_obs
+         end
       else
         if proved
         then begin
@@ -1472,6 +1478,7 @@ let set_status_and_time_column ?limit row =
         | C.Uninstalled _ -> "(uninstalled prover)"
         | C.Scheduled -> "(scheduled)"
         | C.Running -> "(running)"
+        | C.Detached -> "(detached)"
       in
       let t = match pa with
         | C.Scheduled | C.Running ->
@@ -1486,6 +1493,7 @@ let set_status_and_time_column ?limit row =
         | _ -> t
       in
       let t = if obs then t ^ " (obsolete)" else t in
+      let t = if detached then t ^ " (detached)" else t in
       goals_model#set ~row:row#iter ~column:time_column t;
       image_of_pa_status ~obsolete:obs pa
   in
@@ -1621,6 +1629,10 @@ let () =
 
 (* complete the tools menu *)
 
+let edit_menu_item =
+  create_menu_item tools_factory "Edit"
+                   "View or edit proof script"
+
 let replay_menu_item =
   create_menu_item tools_factory "Replay obsolete"
                    "Replay all obsolete proofs"
@@ -1659,6 +1671,14 @@ let () =
                | [r] ->
                    let id = get_node_id r#iter in
                    send_request (Remove_subtree id)
+               | _ -> print_message "Select only one node to perform this action");
+  connect_menu_item
+    edit_menu_item
+    ~callback:(fun () ->
+               match get_selected_row_references () with
+               | [r] ->
+                   let id = get_node_id r#iter in
+                   send_request (Command_req (id,"edit"))
                | _ -> print_message "Select only one node to perform this action");
   connect_menu_item
     mark_obsolete_item

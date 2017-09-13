@@ -19,6 +19,7 @@ open Session_itp
 type proof_attempt_status =
     | Unedited (** editor not yet run for interactive proof *)
     | JustEdited (** edited but not run yet *)
+    | Detached (** parent goal has no task, is detached *)
     | Interrupted (** external proof has never completed *)
     | Scheduled (** external proof attempt is scheduled *)
     | Running (** external proof attempt is in progress *)
@@ -175,7 +176,6 @@ val interrupt : unit -> unit
     the ones already running *)
 
 val schedule_proof_attempt :
-  ?proof_script:string ->
   controller ->
   proofNodeID ->
   Whyconf.prover ->
@@ -194,9 +194,6 @@ val schedule_edition :
   controller ->
   proofNodeID ->
   Whyconf.prover ->
-  no_edit: bool ->
-  do_check_proof: bool ->
-  ?file: string ->
   callback:(proofAttemptID -> proof_attempt_status -> unit) ->
   notification:notifier -> unit
 (** [schedule_edition c id pr ~no_edit ~do_check_proof ?file ~callback

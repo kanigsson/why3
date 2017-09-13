@@ -254,7 +254,9 @@ let get_exception_message ses id e =
 let print_request fmt r =
   match r with
   | Command_req (_nid, s)           -> fprintf fmt "command \"%s\"" s
+(*
   | Prove_req (_nid, prover, _rl)   -> fprintf fmt "prove with %s" prover
+ *)
   | Transform_req (_nid, tr, _args) -> fprintf fmt "transformation :%s" tr
   | Strategy_req (_nid, st)         -> fprintf fmt "strategy %s" st
   | Edit_req (_nid, prover)         -> fprintf fmt "edit with %s" prover
@@ -341,7 +343,7 @@ end
 
 module Make (S:Controller_itp.Scheduler) (Pr:Protocol) = struct
 
-  module C = Controller_itp.Make(S)
+module C = Controller_itp.Make(S)
 
 let debug = Debug.register_flag "itp_server" ~desc:"ITP server"
 
@@ -1024,22 +1026,19 @@ end
   (* Callback of a proof_attempt *)
   let callback_update_tree_proof cont panid pa_status =
     let ses = cont.controller_session in
-    begin match pa_status with
-    | Scheduled ->
-      begin
-        try
-          let _ : node_ID = node_ID_from_pan panid in ()
-        (* TODO: do we notify here ? *)
-        with Not_found ->
-          let parent_id = get_proof_attempt_parent ses panid in
-          let parent = node_ID_from_pn parent_id in
-          let _: node_ID = new_node ~parent (APa panid) in ()
-      end
-    | _  -> () (* TODO ? status like Uninstalled should not generate a Notification *)
-    end;
-    let limit = (get_proof_attempt_node cont.controller_session panid).limit in
-    let new_status = Proof_status_change (pa_status, false, limit) in
-    P.notify (Node_change (node_ID_from_pan panid, new_status))
+    let node_id =
+      try
+        node_ID_from_pan panid
+      with Not_found ->
+        let parent_id = get_proof_attempt_parent ses panid in
+        let parent = node_ID_from_pn parent_id in
+        new_node ~parent (APa panid)
+    in
+    let pa = get_proof_attempt_node ses panid in
+    let new_status =
+      Proof_status_change (pa_status, pa.proof_obsolete, pa.limit)
+    in
+    P.notify (Node_change (node_id, new_status))
 
   let notify_change_proved c x =
     try
@@ -1054,6 +1053,8 @@ end
            | Some r -> Done r
          in
          let obs = pa.proof_obsolete in
+         Debug.dprintf debug
+                       "[Itp_server.notify_change_proved: obsolete = %b@." obs;
          let limit = pa.limit in
          P.notify (Node_change (node_ID, Proof_status_change(res, obs, limit)))
       | _ -> ()
@@ -1070,33 +1071,24 @@ end
                 ~limit ~callback ~notification:(notify_change_proved d.cont))
       unproven_goals
 
-  let callback_edition cont panid pa_status =
-    let ses = cont.controller_session in
-    begin match pa_status with
-    | Running ->
-      begin
-        try
-          ignore (node_ID_from_pan panid)
-        with Not_found ->
-          let parent_id = get_proof_attempt_parent ses panid in
-          let parent = node_ID_from_pn parent_id in
-          ignore (new_node ~parent (APa panid))
-      end
-    | _  -> ()
-    end;
-    let limit = (get_proof_attempt_node cont.controller_session panid).limit in
-    let new_status = Proof_status_change (pa_status, false, limit) in
-    P.notify (Node_change (node_ID_from_pan panid, new_status))
-
   let schedule_edition (nid: node_ID) (p: Whyconf.config_prover) =
     let d = get_server_data () in
     let prover = p.Whyconf.prover in
-    let callback = callback_edition d.cont in
-    match any_from_node_ID nid with
-    | APn id ->
-        C.schedule_edition d.cont id prover ~no_edit:false ~do_check_proof:false ?file:None
-          ~callback ~notification:(notify_change_proved d.cont)
-    | _ -> ()
+    let callback = callback_update_tree_proof d.cont in
+    try
+      let id =
+        match any_from_node_ID nid with
+        | APn id -> id
+        | APa panid -> get_proof_attempt_parent d.cont.controller_session panid
+        | _ -> raise Not_found
+      in
+      C.schedule_edition d.cont id prover
+                           ~callback ~notification:(notify_change_proved d.cont)
+    with Not_found ->
+      P.notify
+        (Message
+           (Information
+              "for edition please select either a goal or a proof attempt"))
 
   (* ----------------- Schedule transformation -------------------- *)
 
@@ -1223,6 +1215,11 @@ end
   let () = register_command "clean" "remove unsuccessful proof attempts that are below proved goals"
     (Qnotask (fun _cont _args ->  clean_session (); "Cleaning done"))
 
+(*
+  let () = register_command "edit" "remove unsuccessful proof attempts that are below proved goals"
+    (Qtask (fun cont _table _args ->  schedule_editionn (); "Editor called"))
+ *)
+
 (* TODO: should this remove the current selected node ?
   let () = register_command
              "remove_node" "removes a proof attempt or a transformation"
@@ -1279,6 +1276,7 @@ end
     let config = d.cont.controller_config in
     try (
     match r with
+(*
     | Prove_req (nid,p,limit)      ->
       let p = try Some (get_prover p) with
       | Bad_prover_name p -> P.notify (Message (Proof_error (nid, "Bad prover name" ^ p))); None
@@ -1289,6 +1287,7 @@ end
           let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
           schedule_proof_attempt ~counterexmp nid p limit
       end
+ *)
     | Transform_req (nid, t, args) -> apply_transform nid t args
     | Strategy_req (nid, st)       ->
         let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
