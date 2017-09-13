@@ -212,6 +212,7 @@ let report_messages c obj =
       Gnat_report.Not_Proved (unproved_task, model, tracefile, manual_info) in
   Gnat_report.register obj (C.Save_VCs.check_to_json s obj) result
 
+
 let c = Gnat_objectives.init_cont ()
 
 let _ =
@@ -273,6 +274,7 @@ let _ =
 
 (* This is to be executed when scheduling ends *)
 let ending () =
+  C.remove_all_valid_ce_attempt c.Controller_itp.controller_session;
   Util.timing_step_completed "gnatwhy3.run_vcs";
   C.save_session c;
   Util.timing_step_completed "gnatwhy3.save_session";

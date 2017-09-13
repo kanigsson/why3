@@ -1017,6 +1017,19 @@ let is_valid_pa pa =
   | Some pr when pr.Call_provers.pr_answer = Call_provers.Valid -> true
   | _ -> false
 
+let remove_all_valid_ce_attempt s =
+  Session_itp.fold_all_session s
+    (fun () any ->
+      match any with
+      | Session_itp.APa paid ->
+          let pa = Session_itp.get_proof_attempt_node s paid in
+          if is_valid_pa pa && Gnat_config.is_ce_prover s paid then
+            Session_itp.remove_subtree
+              ~notification:(fun _ -> ()) ~removed:(fun _ -> ())
+              s any
+      | _ -> ()) ()
+
+
 (* exception Goal_Found of goal *)
 exception PA_Found of Session_itp.proofAttemptID
 

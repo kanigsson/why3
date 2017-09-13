@@ -179,6 +179,11 @@ val session_proved_status : Controller_itp.controller -> objective -> bool
 (* check the proof status of an objective by looking at the verified/not
    verified status of its VCs in the session *)
 
+val remove_all_valid_ce_attempt: Session_itp.session -> unit
+(* Removes all valid ce attempt that pollutes the session
+   ??? We may want to report this information to explain lack of counterexamples
+   or try greater timeout ? *)
+
 val session_find_unproved_pa :
     Controller_itp.controller -> objective -> Session_itp.proofAttemptID option
 (* find the first unproved (not obsolete) proof attempt in a session which is
