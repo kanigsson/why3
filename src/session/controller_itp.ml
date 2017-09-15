@@ -380,22 +380,26 @@ let timeout_handler () =
     done
   end;
 
-  (* Check for editor calls which are not finished *)
-  let q = Queue.create () in
-  while not (Queue.is_empty prover_tasks_edited) do
-    (* call is an EditorCall *)
-    let (_ses,_id,_pr,callback,_started,call,ores) as c =
-      Queue.pop prover_tasks_edited in
-    let prover_update = Call_provers.query_call call in
-    match prover_update with
-    | Call_provers.NoUpdates -> Queue.add c q
-    | Call_provers.ProverFinished res ->
-       let res = Opt.fold fuzzy_proof_time res ores in
-       (* inform the callback *)
-       callback (Done res)
-    | _ -> assert (false) (* An edition can only return Noupdates or finished *)
-  done;
-  Queue.transfer q prover_tasks_edited;
+  (* When blocking is activated, we are in script mode and we don't want editors
+     to be launched so we don't need to go in this loop. *)
+  if not S.blocking then begin
+    (* Check for editor calls which are not finished *)
+    let q = Queue.create () in
+    while not (Queue.is_empty prover_tasks_edited) do
+      (* call is an EditorCall *)
+      let (_ses,_id,_pr,callback,_started,call,ores) as c =
+        Queue.pop prover_tasks_edited in
+      let prover_update = Call_provers.query_call call in
+      match prover_update with
+      | Call_provers.NoUpdates -> Queue.add c q
+      | Call_provers.ProverFinished res ->
+          let res = Opt.fold fuzzy_proof_time res ores in
+          (* inform the callback *)
+          callback (Done res)
+      | _ -> assert (false) (* An edition can only return Noupdates or finished *)
+    done;
+    Queue.transfer q prover_tasks_edited;
+  end;
 
   (* if the number of prover tasks is less than S.multiplier times the maximum
      number of running provers, then we heuristically decide to add
@@ -533,7 +537,8 @@ let replay_proof_attempt c pr limit (parid: proofNodeID) id ~callback ~notificat
        callback id Detached
 
 
-(* TODO to be simplified *)
+(*** { 2 edition of proof scripts} *)
+
 (* create the path to a file for saving the external proof script *)
 let create_file_rel_path c pr pn =
   let session = c.controller_session in
@@ -550,19 +555,24 @@ let create_file_rel_path c pr pn =
   let file = Sysutil.relativize_filename session_dir file in
   file
 
-let update_edit_external_proof c pn ?panid pr =
+let prepare_edition c ?file pn pr ~notification =
   let session = c.controller_session in
-  let driver = snd (Hprover.find c.controller_provers pr) in
-  let task = Session_itp.get_raw_task session pn in
-  let session_dir = Session_itp.get_dir session in
-  let file =
-    match panid with
-    | None ->
-        create_file_rel_path c pr pn
-    | Some panid ->
-        let pa = get_proof_attempt_node session panid in
-        Opt.get pa.proof_script
+  let proof_attempts_id = get_proof_attempt_ids session pn in
+  let panid =
+    try
+      Hprover.find proof_attempts_id pr
+    with Not_found ->
+      let file = match file with
+        | Some f -> f
+        | None -> create_file_rel_path c pr pn
+      in
+      let limit = Call_provers.empty_limit in
+      graft_proof_attempt session pn pr ~file ~limit
   in
+  update_goal_node notification session pn;
+  let pa = get_proof_attempt_node session panid in
+  let file = Opt.get pa.proof_script in
+  let session_dir = Session_itp.get_dir session in
   let file = Filename.concat session_dir file in
   let old =
     if Sys.file_exists file
@@ -578,10 +588,12 @@ let update_edit_external_proof c pn ?panid pr =
   in
   let ch = open_out file in
   let fmt = formatter_of_out_channel ch in
+  let task = Session_itp.get_raw_task session pn in
+  let driver = snd (Hprover.find c.controller_provers pr) in
   Driver.print_task ~cntexample:false ?old driver fmt task;
   Opt.iter close_in old;
   close_out ch;
-  file
+  panid,file
 
 exception Editor_not_found
 
@@ -590,8 +602,6 @@ let schedule_edition c id pr ~callback ~notification =
   let config = c.controller_config in
   let session = c.controller_session in
   let prover_conf = Whyconf.get_prover_config config pr in
-  let session_dir = Session_itp.get_dir session in
-  let limit = Call_provers.empty_limit in
   (* Make sure editor exists. Fails otherwise *)
   let editor =
     match prover_conf.Whyconf.editor with
@@ -603,21 +613,11 @@ let schedule_edition c id pr ~callback ~notification =
                               ed.Whyconf.editor_options)
        with Not_found -> raise Editor_not_found
   in
-  let proof_attempts_id = get_proof_attempt_ids session id in
-  let panid =
-    try Hprover.find proof_attempts_id pr
-    with Not_found ->
-      let file = update_edit_external_proof c id pr in
-      let filename = Sysutil.relativize_filename session_dir file in
-      graft_proof_attempt session id pr ~file:filename ~limit
-  in
-  let pa = get_proof_attempt_node session panid in
+  let panid,file = prepare_edition c id pr ~notification in
   (* Notification node *)
   let callback panid s =
     begin
       match s with
-      | Scheduled | Running ->
-                     update_goal_node notification session id
       | Done res ->
          (* set obsolete to true since we do not know if the manual
             proof was completed or not *)
@@ -626,13 +626,12 @@ let schedule_edition c id pr ~callback ~notification =
                        print_proofAttemptID panid print_proofNodeID id;
          update_proof_attempt ~obsolete:true notification session id pr res;
          update_goal_node notification session id
+      | Scheduled | Running -> ()
       | Interrupted | InternalFailure _ -> ()
       | _ -> ()
     end;
     callback panid s
   in
-  let file = Opt.get pa.proof_script in
-  let file = Filename.concat session_dir file in
   Debug.dprintf debug_sched "[Editing] goal %s with command '%s' on file %s@."
                 (Session_itp.get_proof_name session id).Ident.id_string
                 editor file;
@@ -650,6 +649,9 @@ let schedule_edition c id pr ~callback ~notification =
     end
 *)
 
+
+
+(*** { 2 transformations} *)
 
 let schedule_transformation_r c id name args ~callback =
   let apply_trans () =

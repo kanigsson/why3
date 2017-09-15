@@ -411,7 +411,10 @@ let forward_results ~blocking =
   get_new_results ~blocking;
   let q = Queue.create () in
   Hashtbl.iter (fun key element ->
-    Queue.push (ServerCall key, element) q) result_buffer;
+    if element = ProverStarted then
+      ()
+    else
+      Queue.push (ServerCall key, element) q) result_buffer;
   Hashtbl.clear result_buffer;
   q
 
