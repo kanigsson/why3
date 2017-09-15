@@ -275,7 +275,15 @@ let adapt_limits ~interactive ~use_steps limits a =
          | Call_provers.Timeout -> timelimit, increased_mem, steplimit
          | Call_provers.Valid ->
             let steplimit =
-              if use_steps && not a.proof_obsolete then s else 0
+              if use_steps && not a.proof_obsolete then
+                (* We need to allow at least one more step than what was used to
+                   prove the same statement. Otherwise, the prover run out of
+                   steps: this happens with cvc4 on some very fast proofs
+                   (steps = 28).
+                *)
+                s + 1
+              else
+                0
             in
             increased_time, increased_mem, steplimit
          | Call_provers.Unknown _
@@ -640,16 +648,6 @@ let schedule_edition c id pr ~callback ~notification =
   Queue.add (c.controller_session,id,pr,callback panid,false,call,None)
             prover_tasks_edited;
   run_timeout_handler ()
-
-(* TODO get back no_edit ???
- if no_edit then
-    begin
-      callback panid Running;
-      callback panid Interrupted
-    end
-*)
-
-
 
 (*** { 2 transformations} *)
 
