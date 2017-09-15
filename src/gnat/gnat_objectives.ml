@@ -865,14 +865,19 @@ let run_goal ~cntexample ?limit ~callback c prover g =
           pa_node.Session_itp.proof_script) old_paid)
     in
     begin
-      if old_file = None then
+      match old_file with
+      | None ->
         let check = get_objective g in
         let new_file = Gnat_manual.create_prover_file c g check prover in
-        C.schedule_edition (*~no_edit:true ~do_check_proof:true*)
-          c g prover (*~file:new_file*) ~callback ~notification
-      else
+        let _paid, _file = C.prepare_edition c ~file:new_file
+          g prover ~notification in
+        C.schedule_proof_attempt ~counterexmp:false ~limit:Call_provers.empty_limit
+          c g prover ~callback ~notification
+      | Some old_file ->
+        let _paid, _file = C.prepare_edition c ~file:old_file
+          g prover ~notification in
         C.schedule_proof_attempt ~counterexmp:cntexample
-          ~limit:Call_provers.empty_limit (*?proof_script:old_file*) c g prover
+          ~limit:Call_provers.empty_limit c g prover
           ~callback ~notification
     end
   else
