@@ -721,10 +721,6 @@ let merge_config config filename =
         if not (filter_prover fp p) then c
         else
           let opt = get_stringl ~default:[] section "option" in
-(* TODO FINISH MERGE
-          let drv = List.map (Sysutil.absolutize_filename dirname)
-            (get_stringl ~default:[] section "driver") in
-*)
           let drv = get_stringl ~default:[] section "driver" in
           let bcmd = get_stringl ~default:[] section "build_command" in
           { c with

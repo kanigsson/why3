@@ -287,23 +287,6 @@ let compute_base_provers config str_list =
     Gnat_util.abort_with_message ~internal:false
       "Several provers match the selection."
 
-(* this function loads the driver for a given prover *)
-(* TODO keep it removed ?
-
-let prover_driver env base_prover =
-  try
-    Driver.load_driver env base_prover.Whyconf.driver base_prover.Whyconf.extra_drivers
-    (* TODO this removed but maybe should not
-    let driver_file = find_driver_file base_prover.Whyconf.driver in
-    Driver.load_driver env driver_file base_prover.Whyconf.extra_drivers
-    *)
-  with e ->
-    let s =
-      Pp.sprintf "Failed to load driver for prover: %a"
-        Exn_printer.exn_printer e in
-    Gnat_util.abort_with_message ~internal:true s
-*)
-
 (* we slightly change the config so that drivers files are referenced
    with the right prefix. *)
 let get_gnatprove_config config =
@@ -367,24 +350,6 @@ let provers, prover_ce, config, env =
       | None -> base_loadpath
     in
     Env.create_env extended_loadpath  in
-(* TODO merge
-  (* this function loads the driver for a given prover *)
-  let prover_driver base_prover =
-    try
-      let driver_file = find_driver_file base_prover.Whyconf.driver in
-      Driver.load_driver_absolute
-        env driver_file base_prover.Whyconf.extra_drivers
-    with e when Debug.test_flag Debug.stack_trace -> raise e
-    | e ->
-      let s =
-        Pp.sprintf "Failed to load driver for prover: %a"
-             Exn_printer.exn_printer e in
-      Gnat_util.abort_with_message ~internal:true s in
-  (* now we build the prover record for each requested prover *)
-  let build_prover_rec base_prover =
-    { Session.prover_driver = prover_driver  base_prover;
-      prover_config = base_prover} in
-*)
   let provers =
     List.map (fun x -> x.Whyconf.prover) base_provers in
   let prover_ce =

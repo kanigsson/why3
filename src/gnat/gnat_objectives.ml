@@ -302,7 +302,7 @@ let has_file (session: Session_itp.session) =
       false
    with Exit -> true
 
-(* Initialization of why3server (TODO from Gnat_sched) *)
+(* Initialization of why3server *)
 let init () =
   if Gnat_config.stand_alone then begin
     Prove_client.connect_internal ();
@@ -332,10 +332,14 @@ let init_cont () =
   end;
   (* Init why3server *)
   init ();
-  (* TODO reload files to get an up to date controller *)
-  (* TODO we do not use the result boolean of reload_files yet *)
-  let _, _ = Controller_itp.reload_files c ~use_shapes in
-  c
+  (* Reloading file to get an up to date controller/session. *)
+  try
+    let _, _ = Controller_itp.reload_files c ~use_shapes in
+    c
+  with
+  | e ->
+      Gnat_util.abort_with_message ~internal:true
+        (Pp.sprintf "could not reload files of the session")
 
 let objective_status obj =
    let obj_rec = Gnat_expl.HCheck.find explmap obj in
@@ -365,27 +369,19 @@ let has_been_tried_by s (g: goal_id) (prover: Whyconf.prover) =
 let all_provers_tried s g =
   List.for_all (fun p -> has_been_tried_by s g p) Gnat_config.provers
 
-(* iter_leafs is actually an iter_leafs after the application of gnat_split so
-   it should only apply on direct children of transformations called gnat_split
-   (or alternatively on the goal itself) *)
-(* TODO check the correctness of this *)
+(* iter_leafs is actually used after the application of gnat_split and it should
+   only apply on direct children of transformations called gnat_split (or
+   alternatively on the goal itself). *)
 let iter_leafs s goal f =
   let tr_list = Session_itp.get_transformations s goal in
   (try
-    (*Format.eprintf "TODO %a@." (fun fmt l -> List.iter (fun x -> Format.fprintf fmt "%s" (Session_itp.get_transf_name s x)) l) tr_list;*)
-    let tr_gnat_split = List.find (fun x -> (*Session_itp.get_transf_name s x = "split_disj" || Session_itp.get_transf_name s x = "path_split" || *)  Session_itp.get_transf_name s x = "split_goal_wp_conj") tr_list in
+    let tr_gnat_split =
+      List.find (fun x -> Session_itp.get_transf_name s x = "split_goal_wp_conj")
+                tr_list
+    in
     let subsubgoals = Session_itp.get_sub_tasks s tr_gnat_split in
     List.iter (fun pn -> f (Session_itp.APn pn)) subsubgoals
   with Not_found -> ())
-
-(*
-let iter_leafs s goal f =
-  Session_itp.fold_all_any
-    s (fun _acc any -> match any with
-                | Session_itp.APn g -> if goal != g then f any
-                | _ -> ())
-    () (Session_itp.APn goal)
-*)
 
 let iter_leaf_goals s subp f =
   let f x = match x with
@@ -455,8 +451,7 @@ let further_split (c: Controller_itp.controller) (goal: goal_id) =
               with Not_found -> ())
            end
          | Controller_itp.TSscheduled  -> ()
-         | Controller_itp.TSfailed _ -> () (* TODO *)
-(*         | _ -> failwith "TODO"*)
+         | Controller_itp.TSfailed _ -> ()
        in
        (* Pass empty function for notification as there is no IDE to update *)
        C.schedule_transformation c goal trans [] ~callback:callback
@@ -756,7 +751,6 @@ let add_to_stat prover pr stat =
       GM.add goal_map goal vc_fn;
       with_fmt_channel vc_fn
         (fun fmt ->
-(* TODO Here we should have a name table which is not available  ? *)
           Driver.print_task ~cntexample ~ce_prover driver fmt task)
 
    let compute_trace s =
@@ -843,12 +837,10 @@ end
 
 open Save_VCs
 
-(* TODO remaining of Gnat_sched is here. Actually everything in gnat_sched file
-   is now included either in Controller_itp or in gnat_scheduler.  *)
 let run_goal ~cntexample ?limit ~callback c prover g =
   (* spawn a prover and return immediately. The return value is a tuple of type
-     Call_provers.prover_call * Session.goal TODO the next step of the program
-     is now directly in the callback *)
+     Call_provers.prover_call * Session.goal. The next step of the program
+     is now directly in the callback. *)
   let session = c.Controller_itp.controller_session in
   let config_prover = fst (Whyconf.Hprover.find c.Controller_itp.controller_provers prover) in
   let callback _x _t = callback _x _t in
@@ -886,27 +878,6 @@ let run_goal ~cntexample ?limit ~callback c prover g =
 (* TODO we should pass the type prover not a string here ? *)
       | None -> Gnat_config.limit ~prover:prover.Whyconf.prover_name
       | Some x -> x in
-
-(*
-  let old, inplace, limit =
-    match (base_prover.Whyconf.interactive,
-           Whyconf.Hprover.find_opt
-             (Session_itp.get_proof_attempt_ids c.Controller_itp.controller_session g)
-                                     base_prover.Whyconf.prover) with
-    | true, Some panid ->
-
-{ Session.proof_edited_as = Some fn } ->
-       Some fn, true, Call_provers.empty_limit
-    | _ ->
-        let prover = base_prover.Whyconf.prover.Whyconf.prover_name in
-        let limit =
-          match limit with
-          | None -> Gnat_config.limit ~prover
-          | Some x -> x in
-        None, false, limit in
-
-
-*)
     if config_prover.Whyconf.interactive then () else
     C.schedule_proof_attempt
       ~counterexmp:cntexample ~limit ~callback
@@ -975,10 +946,6 @@ let all_split_leaf_goals () =
    ))
 *)
 
-(* TODO this is incorrect because we do not check ce_prover more deeply hidden
-   into the proof tree. This function probably exists before but was lost during
-   merging of itp.
-*)
 let is_valid_not_ce session g =
   (* More efficient to first check if it is correct and only then check if it
      was not generated by a counterexample prover *)
@@ -1139,10 +1106,11 @@ let rec is_obsolete_verified session goal =
 
 let rec replay_transf c tf =
   let session = c.Controller_itp.controller_session in
-(* TODO do we want to redo the transformations here ? *)
-  let tf_proves_goal = Session_itp.tn_proved session tf in (* TODO here we should also include obsolete stuff so this is not correct ? *)
-  if tf_proves_goal then List.iter (replay_goal c) (Session_itp.get_sub_tasks session tf)
-  else ()
+  let tf_proves_goal = Session_itp.tn_proved session tf in
+  if tf_proves_goal then
+    List.iter (replay_goal c) (Session_itp.get_sub_tasks session tf)
+  else
+    ()
 
 and replay_goal c goal =
   let session = c.Controller_itp.controller_session in
@@ -1162,7 +1130,6 @@ and replay_goal c goal =
 
       let transforms = Session_itp.get_transformations session goal in
       List.iter (replay_transf c) transforms
-      (*Session.iter_goal nothing (replay_transf) nothing goal*)
     with PA_Found pa ->
       let pa_prover =
         (Session_itp.get_proof_attempt_node session pa).Session_itp.prover in

@@ -100,11 +100,6 @@ and create_manual_or_schedule (c: Controller_itp.controller) _obj goal =
   | Some _ when C.goal_has_splits s goal &&
                 not (Session_itp.pn_proved c.Controller_itp.controller_session goal) ->
                   handle_vc_result c goal false
-(* TODO recover this
-    | Some p when Gnat_manual.is_new_manual_proof goal &&
-                not (C.pn_proved c goal) ->
-                  let _ = Gnat_manual.create_prover_file goal obj p in
-                  ()*)
   | _ -> schedule_goal c goal
 
 and schedule_goal (c: Controller_itp.controller) (g : Session_itp.proofNodeID) =
@@ -232,7 +227,8 @@ let _ =
      exit signum
    in
 
-   (* TODO have to do it after initialization of controller *)
+   (* This has to be done after initialization of controller. Otherwise we don't
+      have session or nothing. *)
    Sys.set_signal Sys.sigint (Sys.Signal_handle (save_session_and_exit c));
    Util.init_timing ();
    Util.timing_step_completed "gnatwhy3.init"
