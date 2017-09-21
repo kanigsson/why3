@@ -1633,7 +1633,7 @@ let merge_file_section ~use_shapes ~old_ses ~old_theories ~env
                      old_th_table [] in
     theories, detached
   in
-  f.file_theories <- theories @ detached;
+  f.file_theories <- theories (*@ detached*);
   update_file_node (fun _ -> ()) s f
 
 
