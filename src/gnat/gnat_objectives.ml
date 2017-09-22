@@ -763,7 +763,7 @@ let add_to_stat prover pr stat =
        | _ -> acc
      in
      fun goal ->
-       let task, _naming_table = Session_itp.get_task s goal in
+       let task = Session_itp.get_raw_task s goal in
        let f = Task.task_goal_fmla task in
        compute_trace Gnat_loc.S.empty f
 
