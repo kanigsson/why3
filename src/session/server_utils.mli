@@ -57,6 +57,7 @@ type command =
   | Prove        of Whyconf.config_prover * Call_provers.resource_limit
   | Strategies   of string
   | Edit         of Whyconf.config_prover
+  | Bisect
   | Help_message of string
   | Query        of string
   | QError       of string
@@ -65,7 +66,7 @@ type command =
 val interp:
   (string * query) Stdlib.Hstr.t ->
   Controller_itp.controller ->
-  Session_itp.proofNodeID option -> string -> command
+  Session_itp.any option -> string -> command
 
 
 val get_first_unproven_goal_around:

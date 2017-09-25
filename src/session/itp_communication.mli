@@ -21,18 +21,19 @@ val root_node : node_ID
 (** Global information known when server process has started and that can be
    shared with the IDE through communication *)
 type global_information =
-    {
-     provers         : (string * prover) list;
-     transformations : transformation list;
-     strategies      : (string * strategy) list;
-     commands        : string list
-     (* hidden_provers       : string list; *)
-     (* session_time_limit   : int; *)
-     (* session_mem_limit    : int; *)
-     (* session_nb_processes : int; *)
-     (* session_cntexample   : bool; *)
-     (* main_dir             : string *)
-    }
+  {
+    provers         : (string * string * string) list;
+    (* (shortcut, human readable name, parseable name) *)
+    transformations : transformation list;
+    strategies      : (string * strategy) list;
+    commands        : string list
+                             (* hidden_provers       : string list; *)
+                             (* session_time_limit   : int; *)
+                             (* session_mem_limit    : int; *)
+                             (* session_nb_processes : int; *)
+                             (* session_cntexample   : bool; *)
+                             (* main_dir             : string *)
+  }
 
 type message_notification =
   | Proof_error           of node_ID * string
@@ -106,21 +107,9 @@ type notification =
 
 type ide_request =
   | Command_req             of node_ID * string
-(*
-  | Prove_req               of node_ID * prover * Call_provers.resource_limit
-  (** request to run the given prover on the goal of the given node
-      id, with the given limits.  if the prover is an interactive one,
-      this requests for an edition of the proof script instead of
-      running the prover. Checking the validity of an interactive
-      proof must be done via a [Replay_req] request *)
-*)
-  | Transform_req           of node_ID * transformation * string list
-  | Strategy_req            of node_ID * strategy
-  | Edit_req                of node_ID * prover
-  (** Request for edition of the proof script of the proof attempt
-      associated to the given node id. Works also for non-interactive
-      provers, it simply opens an editeor on the file sent to the
-      prover. *)
+  (* executes the given command on the given node. command is
+     interpreted by Server_utils.interp. This includes calling
+     provers, applying transformations, stategies.  *)
   | Add_file_req            of string
   | Set_max_tasks_req       of int
   | Get_file_contents       of string

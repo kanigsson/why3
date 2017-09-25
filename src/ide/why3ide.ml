@@ -438,6 +438,13 @@ let menu_refresh =
 let menu_save_session =
   create_menu_item file_factory "_Save session"
                    "Save the current proof session on disk"
+let menu_save_files =
+  create_menu_item file_factory "_Save files"
+                   "Save the edited source files on disk"
+let menu_save_session_and_files =
+  create_menu_item file_factory ~key:GdkKeysyms._S "_Save session and files"
+                   "Save the the current proof session and the files"
+
 let menu_quit =
   create_menu_item file_factory ~key:GdkKeysyms._Q "_Quit"
                    "Quit the interface. See the Preferences for setting the policy on automatic file saving at exit."
@@ -446,7 +453,7 @@ let menu_quit =
 
 let tools_menu = factory#add_submenu "_Tools"
 let tools_factory = new GMenu.factory tools_menu ~accel_group
-
+let tools_accel_group = GtkData.AccelGroup.create ()
 
 let strategies_factory =
   let tools_submenu_strategies = tools_factory#add_submenu "Strategies" in
@@ -511,6 +518,17 @@ let () =
   connect_menu_item
     menu_save_session
     ~callback:(fun () -> send_request Save_req)
+
+let () =
+  connect_menu_item
+    menu_save_session_and_files
+    ~callback:(fun () -> save_sources(); send_request Save_req)
+
+let () =
+  connect_menu_item
+    menu_save_files
+    ~callback:(fun () -> save_sources())
+
 
 let () =
   connect_menu_item
@@ -587,9 +605,9 @@ let view_name_column =
   let name_renderer = GTree.cell_renderer_text [`XALIGN 0.] in
   v#pack name_renderer;
   v#add_attribute name_renderer "text" name_column;
-(*  v#set_sizing `AUTOSIZE; *)
+  (* v#set_sizing `AUTOSIZE; *)
   v#set_resizable true;
-  v#set_max_width 500;
+  (*  v#set_max_width 1000;*)
   v
 
 (* second view column: status *)
@@ -903,7 +921,7 @@ let add_completion_entry s =
 let match_function s iter =
   let candidate = completion_model#get ~row:iter ~column:completion_col in
   try
-    ignore (Str.search_forward (Str.regexp s) candidate 0);
+    ignore (Str.search_forward (Str.regexp_string_case_fold s) candidate 0);
     true
   with Not_found -> false
 
@@ -1027,10 +1045,6 @@ let (_ : GMenu.menu_item) =
     view_factory#add_item ~key:GdkKeysyms._minus
       ~callback:reduce_fonts "Reduce font"
 
-let (_ : GMenu.image_menu_item) =
-  view_factory#add_image_item ~key:GdkKeysyms._E
-    ~label:"Expand all" ~callback:(fun () -> goals_view#expand_all ()) ()
-
 let collapse_iter iter =
   let path = goals_model#get_path iter in
   goals_view#collapse_row path
@@ -1051,9 +1065,20 @@ let collapse_proven_goals () =
   | None -> ()
   | Some root_iter -> collapse_proven_goals_from_iter root_iter
 
-let (_ : GMenu.image_menu_item) =
-  view_factory#add_image_item ~key:GdkKeysyms._C
-    ~label:"Collapse proven goals" ~callback:(fun () -> collapse_proven_goals ()) ()
+let () =
+  let i = view_factory#add_item
+            "Collapse proven goals"
+            ~callback:(fun () -> collapse_proven_goals ())
+  in
+  i#misc#set_tooltip_markup "Collapse all sub-nodes of proven nodes (shortcut: Ctrl-C)";
+  i#add_accelerator ~group:tools_accel_group ~modi:[`CONTROL] GdkKeysyms._C;
+  let i = view_factory#add_item
+            "Expand all"
+            ~callback:(fun () -> goals_view#expand_all ())
+  in
+  i#misc#set_tooltip_markup "Expand all nodes of the tree view (shortcut: Ctrl-E)";
+  i#add_accelerator ~group:tools_accel_group ~modi:[`CONTROL] GdkKeysyms._E
+
 
 let () =
   Gconfig.add_modifiable_sans_font_view goals_view#misc;
@@ -1138,6 +1163,8 @@ let on_selected_row r =
       (match pa with
       | Controller_itp.Done pr ->
           task_view#source_buffer#set_text pr.Call_provers.pr_output
+      | Controller_itp.Undone ->
+          task_view#source_buffer#set_text "Undone"
       | Controller_itp.Detached ->
           task_view#source_buffer#set_text "Detached"
       | Controller_itp.Interrupted ->
@@ -1175,15 +1202,15 @@ let (_ : GtkSignal.id) =
     begin
       Debug.dprintf debug "[IDE INFO] button number %d was clicked on the tree view@." n;
       match n with
-      | 1 -> (* Left click *) ()
-      | 2 -> (* Middle click *) ()
+      | 1 -> (* Left click *) false
+      | 2 -> (* Middle click *) false
       | 3 -> (* Right click *)
          Debug.dprintf debug "[IDE INFO] before tools_menu#popup@.";
          tools_menu#popup ~button:3 ~time:(GdkEvent.Button.time ev);
-         Debug.dprintf debug "[IDE INFO] after tools_menu#popup@."
+         Debug.dprintf debug "[IDE INFO] after tools_menu#popup@.";
+         true
       | _ -> (* Error case TODO *) assert false
-    end;
-    false
+    end
   in
   goals_view#event#connect#button_press ~callback
 
@@ -1220,22 +1247,11 @@ let detached_copy () =
     send_request (Copy_detached n)
   | _ -> ()
 
-let (_ : GMenu.menu_item) =
-  exp_factory#add_item ~key:GdkKeysyms._C
-    ~callback:copy "Copy"
+let (_ : GMenu.menu_item) = exp_factory#add_item ~callback:copy "Copy"
 
-let (_ : GMenu.menu_item) =
-  exp_factory#add_item ~key:GdkKeysyms._V
-    ~callback:paste "Paste"
+let (_ : GMenu.menu_item) = exp_factory#add_item ~callback:paste "Paste"
 
-let (_ : GMenu.menu_item) =
-  exp_factory#add_item ~key:GdkKeysyms._D
-    ~callback:detached_copy "Detached copy"
-
-(* TODO replace this with menu items *)
-let (_ : GMenu.menu_item) =
-  exp_factory#add_item ~key:GdkKeysyms._X "Save files"
-    ~callback:(fun () -> save_sources ())
+let (_ : GMenu.menu_item) = exp_factory#add_item ~callback:detached_copy "Detached copy"
 
 (*********************************)
 (* add a new file in the project *)
@@ -1375,6 +1391,7 @@ let if_selected_alone id f =
 
 let image_of_pa_status ~obsolete pa =
   match pa with
+  | Controller_itp.Undone
   | Controller_itp.Interrupted -> !image_undone
   | Controller_itp.Scheduled -> !image_scheduled
   | Controller_itp.Running -> !image_running
@@ -1469,6 +1486,7 @@ let set_status_and_time_column ?limit row =
 	     s
         | C.InternalFailure _ -> "(internal failure)"
         | C.Interrupted -> "(interrupted)"
+        | C.Undone -> "(undone)"
         | C.Uninstalled _ -> "(uninstalled prover)"
         | C.Scheduled -> "(scheduled)"
         | C.Running -> "(running)"
@@ -1494,7 +1512,7 @@ let set_status_and_time_column ?limit row =
   goals_model#set ~row:row#iter ~column:status_column image
 
 
-let new_node ?parent (* ?(collapse=false) *) id name typ detached =
+let new_node ?parent id name typ detached =
   if not (Hint.mem node_id_to_gtree id) then begin
     Hint.add node_id_type id typ;
     Hint.add node_id_detached id detached;
@@ -1540,28 +1558,43 @@ let string_of_desc desc =
   in Glib.Markup.escape_text (Pp.string_of print_trans_desc desc)
 
 
+let pr_shortcut s = if s = "" then "" else " (shortcut: " ^ s ^ ")"
+
+let parse_shortcut_as_key s =
+  match GtkData.AccelGroup.parse s with
+  | (0,[]) ->
+     Debug.dprintf debug "Shortcut '%s' cannot be parsed as a key@." s;
+     None
+  | (key, modi) ->
+     let name = GtkData.AccelGroup.name ~key ~modi in
+     Debug.dprintf debug "Shortcut '%s' parsed as key '%s'@." s name;
+     Some (name, key, modi)
 
 let add_submenu_strategy (shortcut,strategy) =
   let  i = create_menu_item
              strategies_factory
              strategy
-             ("run strategy " ^ strategy ^ " on selected goal (shortcut: " ^ shortcut ^ ")")
+             ("run strategy " ^ strategy ^ " on selected goal" ^ pr_shortcut shortcut)
   in
+  Opt.iter (fun (_,key,modi) -> i#add_accelerator ~group:tools_accel_group ~modi key)
+          (parse_shortcut_as_key shortcut);
   let callback () =
     Debug.dprintf debug "[IDE INFO] interp command '%s'@." shortcut;
     interp shortcut
   in
   connect_menu_item i ~callback
 
-let add_submenu_prover (shortcut,prover) =
+let add_submenu_prover (shortcut,prover_name,prover_parseable_name) =
   let  i = create_menu_item
              provers_factory
-             prover
-             ("run prover " ^ prover ^ " on selected goal (shortcut: " ^ shortcut ^ ")")
+             prover_name
+             ("run prover " ^ prover_name ^ " on selected goal" ^ pr_shortcut shortcut)
   in
+  Opt.iter (fun (_,key,modi) -> i#add_accelerator ~group:tools_accel_group ~modi key)
+          (parse_shortcut_as_key shortcut);
   let callback () =
-    Debug.dprintf debug "[IDE INFO] interp command '%s'@." shortcut;
-    interp shortcut
+    Debug.dprintf debug "[IDE INFO] interp command '%s'@." prover_parseable_name;
+    interp prover_parseable_name
   in
   connect_menu_item i ~callback
 
@@ -1575,13 +1608,16 @@ let init_completion provers transformations strategies commands =
   (* todo: add queries *)
 
   (* add provers *)
+
   let all_strings =
-    List.fold_left (fun acc (s,p) ->  s :: p :: acc) [] provers
+    List.fold_left (fun acc (s,_,p) ->
+                    Debug.dprintf debug "string for completion: '%s' '%s'@." s p;
+                    if s = "" then p :: acc else s :: p :: acc) [] provers
   in
   List.iter add_completion_entry all_strings;
   let provers_sorted =
-    List.sort (fun (_,p1) (_,p2) ->
-               String.compare (Strings.lowercase p1) (Strings.lowercase p2))
+    List.sort (fun (_,h1,_) (_,h2,_) ->
+               String.compare (Strings.lowercase h1) (Strings.lowercase h2))
               provers
   in
   List.iter add_submenu_prover provers_sorted;
@@ -1625,23 +1661,36 @@ let () =
 
 let edit_menu_item =
   create_menu_item tools_factory "Edit"
-                   "View or edit proof script"
+                   "View or edit proof script (shortcut: e)"
+let () =
+  edit_menu_item#add_accelerator ~group:tools_accel_group ~modi:[] GdkKeysyms._e
 
 let replay_menu_item =
   create_menu_item tools_factory "Replay obsolete"
-                   "Replay all obsolete proofs"
+                   "Replay all obsolete proofs (shortcut: r)"
+let () =
+  replay_menu_item#add_accelerator ~group:tools_accel_group ~modi:[] GdkKeysyms._r
 
 let clean_menu_item =
   create_menu_item tools_factory  "Clean"
-                   "Remove unsuccessful proofs or transformations that are below a proved goal"
+                   "Remove unsuccessful proofs or transformations that are below a proved goal (shortcut: c)"
+let () =
+  clean_menu_item#add_accelerator ~group:tools_accel_group ~modi:[] GdkKeysyms._c
+
 
 let remove_item =
   create_menu_item tools_factory "Remove"
-                   "Remove the selected proof attempts or transformations"
+                   "Remove the selected proof attempts or transformations (shortcut: x)"
+let () =
+  remove_item#add_accelerator ~group:tools_accel_group ~modi:[] GdkKeysyms._x
+
 
 let mark_obsolete_item =
   create_menu_item tools_factory "Mark obsolete"
-                   "Mark all proof nodes below the current selected nodes as obsolete"
+                   "Mark all proof nodes below the current selected nodes as obsolete (shortcut: o)"
+let () =
+  mark_obsolete_item#add_accelerator ~group:tools_accel_group ~modi:[] GdkKeysyms._o
+
 
 let focus_item =
   create_menu_item tools_factory "Focus"
@@ -1741,13 +1790,6 @@ let treat_notification n =
           let r = get_node_row id in
           Hint.replace node_id_pa id (pa, obs, l);
           set_status_and_time_column ~limit:l r
-(*
-       | Obsolete b ->
-          let r = get_node_row id in
-          let (pa, _, l) = Hint.find node_id_pa id in
-          Hint.replace node_id_pa id (pa, b, l);
-          set_status_and_time_column ~limit:l r
-*)
      end
   | Next_Unproven_Node_Id (asked_id, next_unproved_id) ->
       if_selected_alone asked_id
@@ -1808,9 +1850,6 @@ let treat_notification n =
      print_message "Serveur sent an unexpected notification '%a'. Please report."
         print_notify n
   end;
-  (* temporary: this should be better executed each time
-     one clicks on the tree view *)
-(*  command_entry#misc#grab_focus () *)
   ()
 
 
@@ -1823,17 +1862,33 @@ let treat_notification n =
 let help_menu = factory#add_submenu "_Help"
 let help_factory = new GMenu.factory help_menu ~accel_group
 
-let (_ : GMenu.image_menu_item) =
-  help_factory#add_image_item
-    ~label:"Legend"
+let (_ : GMenu.menu_item) =
+  help_factory#add_item
+    "Legend"
     ~callback:show_legend_window
-    ()
 
-let (_ : GMenu.image_menu_item) =
-  help_factory#add_image_item
-    ~label:"About"
+let (_ : GMenu.menu_item) =
+  help_factory#add_item
+    "About"
     ~callback:show_about_window
-    ()
+
+
+(***********************************)
+(* accel group switching           *)
+(* when entering/leaving tree view *)
+(***********************************)
+
+let () =
+  let (_:GtkSignal.id) =
+    goals_view#event#connect#focus_in
+      ~callback:(fun _ -> main_window#add_accel_group tools_accel_group; true)
+  in
+  let (_:GtkSignal.id) =
+    goals_view#event#connect#focus_out
+      ~callback:(fun _ ->
+                 GtkWindow.Window.remove_accel_group main_window#as_window tools_accel_group; true)
+  in
+  ()
 
 
 
@@ -1844,9 +1899,6 @@ let (_ : GMenu.image_menu_item) =
 let () =
   Scheduler.timeout ~ms:Controller_itp.default_delay_ms
     (fun () -> List.iter treat_notification (get_notified ()); true);
-  (* temporary *)
-  vpan222#set_position 500;
-  goals_view#expand_all ();
   main_window#add_accel_group accel_group;
   main_window#set_icon (Some !Gconfig.why_icon);
   message_zone#buffer#set_text "Welcome to Why3 IDE\ntype 'help' for help";

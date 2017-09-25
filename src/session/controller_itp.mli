@@ -17,17 +17,14 @@ open Session_itp
 (** {2 State of a proof or transformation in progress} *)
 
 type proof_attempt_status =
-(*
-    | Unedited (** editor not yet run for interactive proof *)
-    | JustEdited (** edited but not run yet *)
- *)
+  | Undone   (** prover was never called *)
+  | Scheduled (** external proof attempt is scheduled *)
+  | Running (** external proof attempt is in progress *)
+  | Done of Call_provers.prover_result (** external proof done *)
+  | Interrupted (** external proof has never completed *)
   | Detached (** parent goal has no task, is detached *)
-    | Interrupted (** external proof has never completed *)
-    | Scheduled (** external proof attempt is scheduled *)
-    | Running (** external proof attempt is in progress *)
-    | Done of Call_provers.prover_result (** external proof done *)
-    | InternalFailure of exn (** external proof aborted by internal error *)
-    | Uninstalled of Whyconf.prover (** prover is uninstalled *)
+  | InternalFailure of exn (** external proof aborted by internal error *)
+  | Uninstalled of Whyconf.prover (** prover is uninstalled *)
 
 val print_status : Format.formatter -> proof_attempt_status -> unit
 
@@ -91,6 +88,7 @@ type controller = private
     controller_env : Env.env;
     controller_provers : (Whyconf.config_prover * Driver.driver) Whyconf.Hprover.t;
     controller_strategies : (string * string * Strategy.instruction array) Stdlib.Hstr.t;
+    controller_running_proof_attempts : unit Hpan.t;
   }
 
 val create_controller: Whyconf.config -> Env.env -> Session_itp.session -> controller
@@ -145,15 +143,23 @@ val reload_files : controller -> use_shapes:bool -> bool * bool
       proof attempts and transformations, but no task is associated to
       it, neither to its subgoals.
 
+
+
+  [reload_files] It returns a pair of boolean (o, d): o true means there are
+    obsolete goals, d means there are missed objects (goals, transformations,
+    theories or files) that are now detached in the session returned.
+
 *)
 
 val add_file : controller -> ?format:Env.fformat -> string -> unit
 (** [add_fil cont ?fmt fname] parses the source file
     [fname] and add the resulting theories to the session of [cont] *)
 
-val remove_subtree: controller -> notification:notifier -> removed:notifier ->
-   any -> unit
-(** Mapping to Session_itp.remove_subtree. Used for code using Why3's API *)
+val remove_subtree: notification:notifier -> removed:notifier ->
+   controller -> any -> unit
+(** remove a subtree of the session, taking care of not removing any
+    proof attempt in progress. raise [RemoveError] if removal is not
+    possible. *)
 
 val get_undetached_children_no_pa: Session_itp.session -> any -> any list
 
@@ -316,6 +322,10 @@ a list of 4-uples [(goalID, prover, limits, report)]
 
 
 val bisect_proof_attempt:
-  notification:notifier -> controller -> proofAttemptID -> unit
+  callback_tr:(string -> string list -> transformation_status -> unit) ->
+  callback_pa:(proofAttemptID -> proof_attempt_status -> unit) ->
+  notification:notifier ->
+  removed:notifier ->
+  controller -> proofAttemptID -> unit
 
 end

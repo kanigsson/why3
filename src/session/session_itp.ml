@@ -57,8 +57,12 @@ type proof_attempt_node = {
   mutable proof_state    : Call_provers.prover_result option;
   (* None means that the call was not done or never returned *)
   mutable proof_obsolete : bool;
-  proof_script           : string option;  (* non empty for external ITP *)
+  mutable proof_script   : string option;  (* non empty for external ITP *)
 }
+
+let set_proof_script pa file =
+  assert (pa.proof_script = None);
+  pa.proof_script <- Some file
 
 type proof_node = {
   proofn_name                    : Ident.ident;
@@ -865,24 +869,6 @@ let mark_obsolete s (id: proofAttemptID) =
 
 exception RemoveError
 
-(* Cannot remove a proof_attempt that was scheduled but did not finish yet.
-   It can be interrupted though. *)
-let removable_proof_attempt s pa =
-  let pa = get_proof_attempt_node s pa in
-  match pa.proof_state with
-  | None -> false
-  | Some _pr -> true
-
-let any_removable s any =
-  match any with
-  | APa pa -> removable_proof_attempt s pa
-  | _ -> true
-
-(* Check whether the subtree [n] contains an unremovable proof_attempt
-   (ie: scheduled or running) *)
-let check_removable s (n: any) =
-  fold_all_any s (fun acc any -> any_removable s any && acc) true n
-
 let remove_subtree ~(notification:notifier) ~(removed:notifier) s (n: any) =
   let remove (n: any) =
     match n with
@@ -892,10 +878,8 @@ let remove_subtree ~(notification:notifier) ~(removed:notifier) s (n: any) =
     | APn pn -> Hint.remove s.proofNode_table pn
     | ATh _th -> (* Not in any table *)  ()
   in
-  (* If a subtree cannot be removed then fail *)
-  if not (check_removable s n) then raise RemoveError;
   match n with
-  | (APn _ | ATh _) when not (is_detached s n) ->
+  | (AFile _ | APn _ | ATh _) when not (is_detached s n) ->
                raise RemoveError
   | _ ->
      let p = get_any_parent s n in
@@ -1404,15 +1388,28 @@ let merge_proof new_s ~goal_obsolete new_goal _ old_pa_n =
     old_pa.proof_state obsolete old_pa.proof_script
     new_goal)
 
+exception NoProgress
+
 let apply_trans_to_goal ~allow_no_effect s env name args id =
   let task, subtasks =
-    let task = get_raw_task s id in
-    let table = Args_wrapper.build_naming_tables task in
+    let raw_task = get_raw_task s id in
+    let task,table = get_task s id in
     try
-      task, Trans.apply_transform_args name env args table task
-    with _e ->
-      let task,table = get_task s id in
-      task, Trans.apply_transform_args name env args table task
+      match Trans.apply_transform_args name env args table raw_task with
+      | [t] when Task.task_equal t raw_task ->
+          Debug.dprintf debug "[apply_trans_to_goal] apply_transform on raw task made no progress@.";
+         raise NoProgress
+      | l -> raw_task, l
+    with
+    | Generic_arg_trans_utils.Arg_trans _
+    | NoProgress as e ->
+       Debug.dprintf debug "[apply_trans_to_goal] apply_transform raised exception %a@."
+                     Exn_printer.exn_printer e;
+       task, Trans.apply_transform_args name env args table task
+    | e ->
+       Debug.dprintf debug "[apply_trans_to_goal] apply_transform raised %a@."
+                     Exn_printer.exn_printer e;
+       task, Trans.apply_transform_args name env args table task
   in
   match subtasks with
   | [t'] when Task.task_equal t' task && not allow_no_effect ->

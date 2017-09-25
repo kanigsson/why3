@@ -20,18 +20,19 @@ let root_node : node_ID = 0
 
 
 type global_information =
-    {
-     provers         : (string * prover) list;
-     transformations : transformation list;
-     strategies      : (string * strategy) list;
-     commands        : string list;
-     (* hidden_provers       : string list; *)
-     (* session_time_limit   : int; *)
-     (* session_mem_limit    : int; *)
+  {
+    provers         : (string * string * string) list;
+    (* (shortcut, human readable name, parseable name) *)
+    transformations : transformation list;
+    strategies      : (string * strategy) list;
+    commands        : string list;
+    (* hidden_provers       : string list; *)
+    (* session_time_limit   : int; *)
+    (* session_mem_limit    : int; *)
      (* session_nb_processes : int; *)
-     (* session_cntexample   : bool; *)
-     (* main_dir             : string *)
-    }
+    (* session_cntexample   : bool; *)
+    (* main_dir             : string *)
+  }
 
 type message_notification =
   | Proof_error           of node_ID * string
@@ -100,15 +101,6 @@ type notification =
 
 type ide_request =
   | Command_req             of node_ID * string
-(*
-  | Prove_req               of node_ID * prover * Call_provers.resource_limit
-*)
-  | Transform_req           of node_ID * transformation * string list
-  | Strategy_req            of node_ID * strategy
-  | Edit_req                of node_ID * prover
-(*
-  | Open_session_req        of string
- *)
   | Add_file_req            of string
   | Set_max_tasks_req       of int
   | Get_file_contents       of string
@@ -132,11 +124,8 @@ type ide_request =
 (* Return true if the request modify the session *)
 let modify_session (r: ide_request) =
   match r with
-  | Command_req _ (* | Prove_req _ *) | Transform_req _ | Strategy_req _
-  | Add_file_req _ | Remove_subtree _ | Copy_paste _ | Copy_detached _
-  | Replay_req | Clean_req | Mark_obsolete_req _ | Edit_req _ -> true
-
-  (*| Open_session_req _ *)
+  | Command_req _ | Add_file_req _ | Remove_subtree _ | Copy_paste _
+  | Copy_detached _ | Replay_req | Clean_req | Mark_obsolete_req _ -> true
   | Set_max_tasks_req _ | Get_file_contents _
   | Get_task _ | Save_file_req _ | Get_first_unproven_node _
   | Get_Session_Tree_req | Save_req | Reload_req | Exit_req

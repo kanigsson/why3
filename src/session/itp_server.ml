@@ -16,8 +16,6 @@ open Controller_itp
 open Server_utils
 open Itp_communication
 
-exception Bad_prover_name of string
-
 (**********************************)
 (* list unproven goal and related *)
 (**********************************)
@@ -254,15 +252,6 @@ let get_exception_message ses id e =
 let print_request fmt r =
   match r with
   | Command_req (_nid, s)           -> fprintf fmt "command \"%s\"" s
-(*
-  | Prove_req (_nid, prover, _rl)   -> fprintf fmt "prove with %s" prover
- *)
-  | Transform_req (_nid, tr, _args) -> fprintf fmt "transformation :%s" tr
-  | Strategy_req (_nid, st)         -> fprintf fmt "strategy %s" st
-  | Edit_req (_nid, prover)         -> fprintf fmt "edit with %s" prover
-(*
-  | Open_session_req f              -> fprintf fmt "open session file %s" f
-*)
   | Add_file_req f                  -> fprintf fmt "open file %s" f
   | Set_max_tasks_req i             -> fprintf fmt "set max tasks %i" i
   | Get_file_contents _f            -> fprintf fmt "get file contents"
@@ -460,12 +449,6 @@ let () =
         let nid = Hpan.find pan_to_node_ID pa in
         Hint.remove model_any nid;
         Hpan.remove pan_to_node_ID pa
-
-  let get_prover p =
-    let d = get_server_data () in
-    match return_prover p d.cont.controller_config with
-    | None -> raise (Bad_prover_name p)
-    | Some c -> c
 
   let add_node_to_table node new_id =
     match node with
@@ -747,7 +730,7 @@ end
       let res =
         match pa.Session_itp.proof_state with
         | Some pa -> Done pa
-        | _ -> InternalFailure Not_found
+        | _ -> Undone
       in
       P.notify (Node_change (new_id, Proof_status_change(res, obs, limit)))
 
@@ -988,10 +971,21 @@ end
                        send_source = send_source;
                      };
     let d = get_server_data () in
+    let shortcuts =
+      Mstr.fold
+        (fun s p acc -> Whyconf.Mprover.add p s acc)
+        (Whyconf.get_prover_shortcuts config) Whyconf.Mprover.empty
+    in
     let prover_list =
-      Mstr.fold (fun x p acc ->
-                 let n = Pp.sprintf "%a" Whyconf.print_prover p in
-                 (x,n) :: acc) (Whyconf.get_prover_shortcuts config) []
+      Whyconf.Mprover.fold
+        (fun pr _ acc ->
+         let s = try
+             Whyconf.Mprover.find pr shortcuts
+           with Not_found -> ""
+         in
+         let n = Pp.sprintf "%a" Whyconf.print_prover pr in
+         let p = Pp.sprintf "%a" Whyconf.print_prover_parseable_format pr in
+         (s,n,p) :: acc) (Whyconf.get_provers config) []
     in
     load_strategies c;
     let transformation_list = List.map fst (list_transforms ()) in
@@ -1049,7 +1043,7 @@ end
       | APa pa ->
          let pa = get_proof_attempt_node c.controller_session pa in
          let res = match pa.Session_itp.proof_state with
-           | None -> InternalFailure Not_found
+           | None -> Undone
            | Some r -> Done r
          in
          let obs = pa.proof_obsolete in
@@ -1058,7 +1052,7 @@ end
          let limit = pa.limit in
          P.notify (Node_change (node_ID, Proof_status_change(res, obs, limit)))
       | _ -> ()
-    with Not_found ->
+    with Not_found when not (Debug.test_flag Debug.stack_trace)->
       Format.eprintf "Anomaly: Itp_server.notify_change_proved@.";
       exit 1
 
@@ -1126,6 +1120,33 @@ end
       (* TODO: propagate trans to all subgoals, just the first one, do nothing ... ?  *)
       ()
 
+  let removed x =
+    let nid = node_ID_from_any x in
+    remove_any_node_ID x;
+    P.notify (Remove nid)
+
+
+  let schedule_bisection (nid: node_ID) =
+    let d = get_server_data () in
+    try
+      let id =
+        match any_from_node_ID nid with
+        | APa panid -> panid
+        | _ -> raise Not_found
+      in
+      let callback_pa = callback_update_tree_proof d.cont in
+      let callback_tr tr args st = callback_update_tree_transform tr args st in
+      C.bisect_proof_attempt d.cont id
+                             ~callback_tr ~callback_pa
+                             ~notification:(notify_change_proved d.cont)
+                             ~removed
+    with Not_found ->
+      P.notify
+        (Message
+           (Information
+              "for bisection please select some proof attempt"))
+
+
   (* ----------------- run strategy -------------------- *)
 
   let debug_strat = Debug.register_flag "strategy_exec" ~desc:"Trace strategies execution"
@@ -1150,13 +1171,10 @@ end
       Debug.dprintf debug_strat "[strategy_exec] strategy '%s' not found@." s
 
 
+
   (* ----------------- Clean session -------------------- *)
   let clean_session () =
     let d = get_server_data () in
-    let removed x =
-      let nid = node_ID_from_any x in
-      remove_any_node_ID x;
-      P.notify (Remove nid) in
     C.clean_session d.cont ~removed
 
 
@@ -1165,13 +1183,10 @@ end
     let n = any_from_node_ID nid in
     begin
       try
-        Session_itp.remove_subtree
-          d.cont.controller_session n
+        remove_subtree
           ~notification:(notify_change_proved d.cont)
-          ~removed:(fun x ->
-                    let nid = node_ID_from_any x in
-                    remove_any_node_ID x;
-                    P.notify (Remove nid))
+          ~removed
+          d.cont n
       with RemoveError -> (* TODO send an error instead of information *)
         P.notify (Message (Information "Cannot remove attached proof nodes or theories, and proof_attempt that did not yet return"))
     end
@@ -1217,7 +1232,7 @@ end
 
 (*
   let () = register_command "edit" "remove unsuccessful proof attempts that are below proved goals"
-    (Qtask (fun cont _table _args ->  schedule_editionn (); "Editor called"))
+    (Qtask (fun cont _table _args ->  schedule_edition (); "Editor called"))
  *)
 
 (* TODO: should this remove the current selected node ?
@@ -1263,35 +1278,13 @@ end
 
   (* ----------------- treat_request -------------------- *)
 
-  let get_proof_node_id nid =
-    try
-      match any_from_node_ID nid with
-      | APn pn_id -> Some pn_id
-      | _ -> None
-    with
-      Not_found -> None
 
-  let rec treat_request r =
+  let treat_request r =
     let d = get_server_data () in
     let config = d.cont.controller_config in
     try (
     match r with
 (*
-    | Prove_req (nid,p,limit)      ->
-      let p = try Some (get_prover p) with
-      | Bad_prover_name p -> P.notify (Message (Proof_error (nid, "Bad prover name" ^ p))); None
-      in
-      begin match p with
-      | None -> ()
-      | Some p ->
-          let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
-          schedule_proof_attempt ~counterexmp nid p limit
-      end
- *)
-    | Transform_req (nid, t, args) -> apply_transform nid t args
-    | Strategy_req (nid, st)       ->
-        let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
-        run_strategy_on_task ~counterexmp nid st
     | Edit_req (nid, p)            ->
       let p = try Some (get_prover p) with
       | Bad_prover_name p -> P.notify (Message (Proof_error (nid, "Bad prover name" ^ p))); None
@@ -1301,6 +1294,7 @@ end
       | Some p ->
           schedule_edition nid p
       end
+ *)
     | Clean_req                    -> clean_session ()
     | Save_req                     -> save_session ()
     | Reload_req                   -> reload_session ()
@@ -1343,9 +1337,9 @@ end
     | Interrupt_req                -> C.interrupt ()
     | Command_req (nid, cmd)       ->
       begin
-        let snid = get_proof_node_id nid in
+        let snid = try Some(any_from_node_ID nid) with Not_found -> None in
         match interp commands_table d.cont snid cmd with
-        | Transform (s, _t, args) -> treat_request (Transform_req (nid, s, args))
+        | Transform (s, _t, args) -> apply_transform nid s args
         | Query s                 -> P.notify (Message (Query_Info (nid, s)))
         | Prove (p, limit)        ->
             let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
@@ -1353,8 +1347,8 @@ end
         | Strategies st           ->
             let counterexmp = Whyconf.cntexample (Whyconf.get_main config) in
             run_strategy_on_task ~counterexmp nid st
-        | Edit p                  ->
-            schedule_edition nid p
+        | Edit p                  -> schedule_edition nid p
+        | Bisect                  -> schedule_bisection nid
         | Help_message s          -> P.notify (Message (Help s))
         | QError s                -> P.notify (Message (Query_Error (nid, s)))
         | Other (s, _args)        ->

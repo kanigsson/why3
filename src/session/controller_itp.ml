@@ -31,22 +31,24 @@ let () = Exn_printer.register
 
 (** State of a proof *)
 type proof_attempt_status =
-  | Detached (** parent goal has no task, is detached *)
-  | Interrupted (** external proof has never completed *)
+  | Undone   (** prover was never called *)
   | Scheduled (** external proof attempt is scheduled *)
   | Running (** external proof attempt is in progress *)
   | Done of Call_provers.prover_result (** external proof done *)
+  | Interrupted (** external proof has never completed *)
+  | Detached (** parent goal has no task, is detached *)
   | InternalFailure of exn (** external proof aborted by internal error *)
   | Uninstalled of Whyconf.prover (** prover is uninstalled *)
 
 let print_status fmt st =
   match st with
-  | Detached          -> fprintf fmt "Detached"
-  | Interrupted       -> fprintf fmt "Interrupted"
+  | Undone            -> fprintf fmt "Undone"
   | Scheduled         -> fprintf fmt "Scheduled"
   | Running           -> fprintf fmt "Running"
   | Done r            ->
       fprintf fmt "Done(%a)" Call_provers.print_prover_result r
+  | Interrupted       -> fprintf fmt "Interrupted"
+  | Detached          -> fprintf fmt "Detached"
   | InternalFailure e ->
       fprintf fmt "InternalFailure(%a)" Exn_printer.exn_printer e
   | Uninstalled pr    ->
@@ -77,6 +79,7 @@ type controller =
     controller_provers:
       (Whyconf.config_prover * Driver.driver) Whyconf.Hprover.t;
     controller_strategies : (string * string * Strategy.instruction array) Stdlib.Hstr.t;
+    controller_running_proof_attempts : unit Hpan.t;
   }
 
 
@@ -88,6 +91,7 @@ let create_controller config env ses =
       controller_env = env;
       controller_provers = Whyconf.Hprover.create 7;
       controller_strategies = Stdlib.Hstr.create 7;
+      controller_running_proof_attempts = Hpan.create 17;
     }
   in
   let provers = Whyconf.get_provers config in
@@ -104,7 +108,27 @@ let create_controller config env ses =
     provers;
   c
 
-let remove_subtree c = Session_itp.remove_subtree c.controller_session
+
+(* Cannot remove a proof_attempt that was scheduled but did not finish yet.
+   It can be interrupted though. *)
+let removable_proof_attempt c pa =
+  try let () = Hpan.find c.controller_running_proof_attempts pa in false
+  with Not_found -> true
+
+let any_removable c any =
+  match any with
+  | APa pa -> removable_proof_attempt c pa
+  | _ -> true
+
+(* Check whether the subtree [n] contains an unremovable proof_attempt
+   (ie: scheduled or running) *)
+let check_removable c (n: any) =
+  fold_all_any c.controller_session (fun acc any -> acc && any_removable c any) true n
+
+
+let remove_subtree ~(notification:notifier) ~(removed:notifier) c (n: any) =
+  if check_removable c n then
+    Session_itp.remove_subtree ~notification ~removed c.controller_session n
 
 (* Get children of any without proofattempts *)
 let get_undetached_children_no_pa s any : any list =
@@ -463,12 +487,27 @@ let schedule_proof_attempt c id pr
                            ~counterexmp ~limit ~callback ~notification =
   let ses = c.controller_session in
   let callback panid s =
-    (match s with
-    | Scheduled | Running -> update_goal_node notification ses id
-    | Done res ->
-        update_proof_attempt ~obsolete:false notification ses id pr res;
-        update_goal_node notification ses id
-    | _ -> ());
+    begin
+      match s with
+      | Scheduled ->
+         Hpan.add c.controller_running_proof_attempts panid ();
+         update_goal_node notification ses id
+      | Running -> update_goal_node notification ses id
+      | Done res ->
+         Hpan.remove c.controller_running_proof_attempts panid;
+         update_proof_attempt ~obsolete:false notification ses id pr res;
+         update_goal_node notification ses id
+      | Interrupted ->
+         Hpan.remove c.controller_running_proof_attempts panid;
+         (* what to do ?
+         update_proof_attempt ~obsolete:false notification ses id pr res;
+          *)
+         update_goal_node notification ses id
+      | Detached
+      | InternalFailure _
+      | Uninstalled _
+      | Undone -> assert false
+    end;
     callback panid s
   in
   let adaptlimit,ores,proof_script =
@@ -568,7 +607,20 @@ let prepare_edition c ?file pn pr ~notification =
   let proof_attempts_id = get_proof_attempt_ids session pn in
   let panid =
     try
-      Hprover.find proof_attempts_id pr
+      let panid = Hprover.find proof_attempts_id pr in
+      (* if no proof script yet, we need to add one
+         it happens e.g when editing a file for an automatic prover
+       *)
+      let pa = get_proof_attempt_node session panid in
+      match pa.proof_script with
+      | None ->
+         let file = match file with
+           | Some f -> f
+           | None -> create_file_rel_path c pr pn
+         in
+         set_proof_script pa file;
+         panid
+      | Some _ -> panid
     with Not_found ->
       let file = match file with
         | Some f -> f
@@ -626,6 +678,7 @@ let schedule_edition c id pr ~callback ~notification =
   let callback panid s =
     begin
       match s with
+      | Running -> ()
       | Done res ->
          (* set obsolete to true since we do not know if the manual
             proof was completed or not *)
@@ -634,9 +687,10 @@ let schedule_edition c id pr ~callback ~notification =
                        print_proofAttemptID panid print_proofNodeID id;
          update_proof_attempt ~obsolete:true notification session id pr res;
          update_goal_node notification session id
-      | Scheduled | Running -> ()
-      | Interrupted | InternalFailure _ -> ()
-      | _ -> ()
+      | Interrupted
+      | InternalFailure _ ->
+         update_goal_node notification session id
+      | Undone | Detached | Uninstalled _ | Scheduled -> assert false
     end;
     callback panid s
   in
@@ -651,7 +705,15 @@ let schedule_edition c id pr ~callback ~notification =
 
 (*** { 2 transformations} *)
 
-let schedule_transformation_r c id name args ~callback =
+let schedule_transformation c id name args ~callback ~notification =
+  let callback s =
+    begin match s with
+          | TSdone tid -> update_trans_node notification c.controller_session tid
+          | TSscheduled
+          | TSfailed _ -> ()
+    end;
+    callback s
+  in
   let apply_trans () =
     begin
       try
@@ -665,7 +727,7 @@ let schedule_transformation_r c id name args ~callback =
       | Exit ->
          (* if result is same as input task, consider it as a failure *)
          callback (TSfailed (id, Noprogress))
-      | e when not (Debug.test_flag Debug.stack_trace) ->
+      | e (* when not (Debug.test_flag Debug.stack_trace) *) ->
         (* Format.eprintf
           "@[Exception raised in Session_itp.apply_trans_to_goal %s:@ %a@.@]"
           name Exn_printer.exn_printer e; TODO *)
@@ -676,12 +738,6 @@ let schedule_transformation_r c id name args ~callback =
   S.idle ~prio:0 apply_trans;
   callback TSscheduled
 
-let schedule_transformation c id name args ~callback ~notification =
-  let callback s = callback s; (match s with
-      | TSdone tid -> update_trans_node notification c.controller_session tid
-      | TSfailed _e -> ()
-      | _ -> ()) in
-  schedule_transformation_r c id name args ~callback
 
 open Strategy
 
@@ -707,7 +763,7 @@ let run_strategy_on_goal
               callback (STSgoto (g,pc+1));
               let run_next () = exec_strategy (pc+1) strat g; false in
               S.idle ~prio:0 run_next
-           | Detached | Uninstalled _ ->
+           | Undone | Detached | Uninstalled _ ->
                          (* should not happen *)
                          assert false
          in
@@ -755,6 +811,13 @@ let schedule_tr_with_same_arguments
   let callback = callback name args in
   schedule_transformation c pn name args ~callback ~notification
 
+let proof_is_complete pa =
+  match pa.Session_itp.proof_state with
+  | None -> false
+  | Some pr ->
+     not pa.Session_itp.proof_obsolete &&
+       Call_provers.(pr.pr_answer = Valid)
+
 let clean_session c ~removed =
   (* clean should not change proved status *)
   let notification _ = assert false in
@@ -766,17 +829,12 @@ let clean_session c ~removed =
       | APa pa ->
         let pa = Session_itp.get_proof_attempt_node s pa in
         if pn_proved s pa.parent then
-          (match pa.Session_itp.proof_state with
-          | None -> ()
-          | Some pr ->
-           if pa.Session_itp.proof_obsolete ||
-                Call_provers.(pr.pr_answer <> Valid)
-           then
-             Session_itp.remove_subtree ~notification ~removed s any)
+          if not (proof_is_complete pa) then
+            remove_subtree ~notification ~removed c any
       | ATn tn ->
         let pn = get_trans_parent s tn in
         if pn_proved s pn && not (tn_proved s tn) then
-          Session_itp.remove_subtree s ~notification ~removed (ATn tn)
+          remove_subtree ~notification ~removed c (ATn tn)
       | _ -> ())) ()
 
 (* This function folds on any subelements of given node and tries to mark all
@@ -899,7 +957,7 @@ let replay ?(obsolete_only=true) ?(use_steps=false)
   let craft_report count s r id pr limits pa =
     match s with
     | Scheduled | Running -> ()
-    | Interrupted ->
+    | Undone | Interrupted ->
        decr count;
        r := (id, pr, limits, Replay_interrupted ) :: !r
     | Done new_r ->
@@ -962,102 +1020,163 @@ let replay ?(obsolete_only=true) ?(use_steps=false)
 
 let debug = Debug.register_flag ~desc:"Task bisection" "bisect"
 
-let bisect_proof_attempt ~notification c pa_id =
+let create_rem_list =
+  let b = Buffer.create 17 in
+  fun rem ->
+  Buffer.clear b;
+  let add pr id =
+    if Buffer.length b > 0 then Buffer.add_char b ',';
+    Buffer.add_string b (Pp.string_of pr id)
+  in
+  let remove_ts ts = add Pretty.print_ts ts in
+  let remove_ls ls = add Pretty.print_ls ls in
+  let remove_pr pr = add Pretty.print_pr pr in
+  Ty.Sts.iter remove_ts rem.Eliminate_definition.rem_ts;
+  Term.Sls.iter remove_ls rem.Eliminate_definition.rem_ls;
+  Decl.Spr.iter remove_pr rem.Eliminate_definition.rem_pr;
+  Buffer.contents b
+
+
+let bisect_proof_attempt ~callback_tr ~callback_pa ~notification ~removed c pa_id =
   let ses = c.controller_session in
   let pa = get_proof_attempt_node ses pa_id in
+  if not (proof_is_complete pa) then
+    invalid_arg "bisect: proof attempt should be valid";
   let goal_id = pa.parent in
   let prover = pa.prover in
   let limit = { pa.limit with
                 Call_provers.limit_steps =
                   Call_provers.empty_limit.Call_provers.limit_steps }
   in
-  let timelimit = ref (-1) in
+  let timelimit = ref limit.Call_provers.limit_time in
   let set_timelimit res =
     timelimit := 1 + (int_of_float (floor res.Call_provers.pr_time)) in
-  let rec callback kont _pa_id = function
-    | Running | Scheduled -> ()
-    | Interrupted ->
-      Debug.dprintf debug "Bisecting interrupted.@."
-    | Detached | Uninstalled _ -> assert false
-    | InternalFailure exn ->
-      (* Perhaps the test can be considered false in this case? *)
-      Debug.dprintf debug "Bisecting interrupted by an error %a.@."
-        Exn_printer.exn_printer exn
-    | Done res ->
-      let b = res.Call_provers.pr_answer = Call_provers.Valid in
-      Debug.dprintf debug "Bisecting: %a.@."
-        Call_provers.print_prover_result res;
-      if b then set_timelimit res;
-      match kont b with
-      | Eliminate_definition.BSdone rem ->
-         if Decl.Spr.is_empty rem.Eliminate_definition.rem_pr &&
-              Term.Sls.is_empty rem.Eliminate_definition.rem_ls &&
-                Ty.Sts.is_empty rem.Eliminate_definition.rem_ts
-         then
-           Debug.dprintf debug "Bisecting doesn't reduced the task.@."
-         else
-           begin
-             Debug.dprintf debug "Bisecting done.@.";
-             ()
-(*
-        begin try
-        let keygen = MA.keygen in
-        let notify = MA.notify in
-        let reml = List.map (fun (m,l) -> m.Theory.meta_name,l) reml in
-        let metas = S.add_registered_metas ~keygen ses reml pa.S.proof_parent in
-        let trans = S.add_registered_transformation ~keygen
-          ses "eliminate_builtin" metas.S.metas_goal in
-        let goal = List.hd trans.S.transf_goals in (* only one *)
-        let npa = S.copy_external_proof ~notify ~keygen ~obsolete:true
-          ~goal ~env_session:ses pa in
-        MA.init_any (S.Metas metas);
-        M.run_external_proof ses sched ~cntexample npa
-        with e ->
-          dprintf debug "Bisecting error:@\n%a@."
-            Exn_printer.exn_printer e end
- *)
-           end
-      | Eliminate_definition.BSstep (_rem,kont) ->
-
-         schedule_proof_attempt
-           c goal_id prover
-	  ~counterexmp:false
-          ~limit:{ limit with Call_provers.limit_time = !timelimit; }
-          ~callback:(callback kont)
-          ~notification
+  let bisect_end rem =
+    if Decl.Spr.is_empty rem.Eliminate_definition.rem_pr &&
+         Term.Sls.is_empty rem.Eliminate_definition.rem_ls &&
+           Ty.Sts.is_empty rem.Eliminate_definition.rem_ts
+    then
+      Debug.dprintf debug "Bisecting didn't reduce the task.@."
+    else
+      begin
+        Debug.dprintf debug "Bisecting done.@.";
+        (* apply again the transformation *)
+        let rem = create_rem_list rem in
+        let callback st =
+          callback_tr "remove" [rem] st;
+          begin match st with
+          | TSscheduled -> ()
+          | TSfailed _ -> assert false
+          | TSdone trid ->
+             match get_sub_tasks ses trid with
+             | [pn] ->
+                let limit = { limit with Call_provers.limit_time = !timelimit; } in
+                let callback paid st =
+                  callback_pa paid st;
+                  begin match st with
+                  | Scheduled | Running -> ()
+                  | Detached | Uninstalled _ -> assert false
+                  | Undone | Interrupted -> Debug.dprintf debug "Bisecting interrupted.@."
+                  | InternalFailure exn ->
+                     (* Perhaps the test can be considered false in this case? *)
+                     Debug.dprintf debug "Bisecting interrupted by an error %a.@."
+                                   Exn_printer.exn_printer exn
+                  | Done res ->
+                     assert (res.Call_provers.pr_answer = Call_provers.Valid);
+                     Debug.dprintf debug "Bisecting: %a.@."
+                                   Call_provers.print_prover_result res
+                  end
+                in
+                schedule_proof_attempt c pn prover ~counterexmp:false ~limit ~callback ~notification
+             | _ -> assert false
+          end
+        in
+        Debug.dprintf debug "To remove: %s@." rem;
+        schedule_transformation c goal_id "remove" [rem] ~callback ~notification
+      end
   in
-  (* Run once the complete goal in order to verify its validity and
-     update the proof attempt *)
-  let first_callback _pa_id = function
-    (* this pa_id can be different from the first pa_id *)
-    | Running | Scheduled -> ()
-    | Interrupted ->
-      Debug.dprintf debug "Bisecting interrupted.@."
-    | Detached | Uninstalled _ -> assert false
-    | InternalFailure exn ->
-        Debug.dprintf debug "proof of the initial task interrupted by an error %a.@."
-          Exn_printer.exn_printer exn
-    | Done res ->
-      if res.Call_provers.pr_answer <> Call_provers.Valid
-      then Debug.dprintf debug "Initial task can't be proved.@."
-      else
-        let t = get_raw_task ses goal_id in
-        let r = Eliminate_definition.bisect_step t in
-        match r with
-        | Eliminate_definition.BSdone _res ->
-          Debug.dprintf debug "Task can't be reduced.@."
-        | Eliminate_definition.BSstep (_rem,kont) ->
-          set_timelimit res;
-          schedule_proof_attempt
-            c goal_id prover
-	    ~counterexmp:false
-            ~limit:{ limit with Call_provers.limit_time = !timelimit}
-            ~callback:(callback kont)
-            ~notification
+  let rec bisect_step rem kont =
+    (* we have to:
+       1) apply transformation remove with the given rem
+       2) on the generated sub-goal, run the prover with some callback
+       3) the callback should :
+          compute (next_iter success_value)
+          if result is done, do nothing more
+          if result is some new rem, remove the previous transformation
+           and recursively call bisect_step
+     *)
+    let rem = create_rem_list rem in
+    let callback st =
+      callback_tr "remove" [rem] st;
+      begin match st with
+      | TSscheduled ->
+         Debug.dprintf
+           debug
+           "[Bisect] transformation 'remove' scheduled@."
+      | TSfailed(_,exn) ->
+         (* may happen if removing a type or a lsymbol that is used
+later on. We do has if proof fails. *)
+         begin
+           Debug.dprintf
+             debug
+             "[Bisect] transformation failed %a@." Exn_printer.exn_printer exn;
+           match kont false with
+           | Eliminate_definition.BSstep (rem,kont) ->
+              bisect_step rem kont
+           | Eliminate_definition.BSdone rem ->
+              bisect_end rem
+         end
+      | TSdone trid ->
+         Debug.dprintf
+           debug
+           "[Bisect] transformation 'remove' succeeds@.";
+         match get_sub_tasks ses trid with
+         | [pn] ->
+            let limit = { limit with Call_provers.limit_time = !timelimit; } in
+            let callback paid st =
+              callback_pa paid st;
+              begin match st with
+              | Scheduled ->
+                 Debug.dprintf
+                   debug "[Bisect] prover on subtask is scheduled@."
+              | Running ->
+                 Debug.dprintf
+                   debug "[Bisect] prover on subtask is running@.";
+              | Detached
+              | Uninstalled _ -> assert false
+              | Undone | Interrupted -> Debug.dprintf debug "Bisecting interrupted.@."
+              | InternalFailure exn ->
+                 (* Perhaps the test can be considered false in this case? *)
+                 Debug.dprintf debug "[Bisect] prover interrupted by an error: %a.@."
+                               Exn_printer.exn_printer exn
+              | Done res ->
+                 Debug.dprintf
+                   debug "[Bisect] prover on subtask returns %a@."
+                   Call_provers.print_prover_answer res.Call_provers.pr_answer;
+                 let b = res.Call_provers.pr_answer = Call_provers.Valid in
+                 if b then set_timelimit res;
+                 match kont b with
+                 | Eliminate_definition.BSstep (rem,kont) ->
+                    Session_itp.remove_subtree ~notification ~removed ses (Session_itp.ATn trid);
+                    bisect_step rem kont
+                 | Eliminate_definition.BSdone rem ->
+                    bisect_end rem
+              end
+            in
+            Debug.dprintf
+              debug "[Bisect] running the prover on subtask@.";
+            schedule_proof_attempt c pn prover ~counterexmp:false ~limit ~callback ~notification
+         | _ -> assert false
+      end
+    in
+    Debug.dprintf debug "To remove: %s@." rem;
+    schedule_transformation c goal_id "remove" [rem] ~callback ~notification
   in
   Debug.dprintf debug "Bisecting with %a started.@."
-    Whyconf.print_prover prover;
-  schedule_proof_attempt
-    c goal_id prover ~counterexmp:false ~limit ~callback:first_callback ~notification
+                Whyconf.print_prover prover;
+  let t = get_raw_task ses goal_id in
+  match Eliminate_definition.bisect_step t with
+  | Eliminate_definition.BSdone _ -> assert false
+  | Eliminate_definition.BSstep(rem,kont) -> bisect_step rem kont
 
 end
