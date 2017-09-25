@@ -106,6 +106,10 @@ val clear : unit -> unit
 (* delete all info from the database, except for the session tree itself *)
 
 
+val get_session_dir: unit -> string
+(* Return the session_dir guessed by gnat tools (it is then passed to the
+   Server_utils function which really get the session). *)
+
 module Make (S: Controller_itp.Scheduler) : sig
 
 
