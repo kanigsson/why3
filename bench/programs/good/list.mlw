@@ -1,0 +1,20 @@
+module M
+
+  use import int.Int
+  use import list.List
+  use import list.Length
+
+  let rec append (l1 : list 'a) (l2 : list 'a) variant { length l1 }
+    ensures { length result = length l1 + length l2 }
+  = match l1 with
+    | Nil -> l2
+    | Cons x r -> Cons x (append r l2)
+    end
+
+end
+
+(*
+Local Variables:
+compile-command: "unset LANG; make -C ../../.. bench/programs/good/list"
+End:
+*)

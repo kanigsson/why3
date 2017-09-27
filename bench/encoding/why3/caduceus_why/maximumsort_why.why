@@ -1,0 +1,1115 @@
+theory Why2
+use map.Map as A
+  use unit_inf.Unit
+  use int.Int
+  use int.ComputerDivision
+  use real.Real
+  use bool_inf.Bool
+  predicate eq_unit Unit.unit Unit.unit
+
+  predicate neq_unit Unit.unit Unit.unit
+
+  predicate eq_bool Bool.bool Bool.bool
+
+  predicate neq_bool Bool.bool Bool.bool
+
+  predicate lt_int int int
+
+  predicate le_int int int
+
+  predicate gt_int int int
+
+  predicate ge_int int int
+
+  predicate eq_int int int
+
+  predicate neq_int int int
+
+  function add_int int int : int
+
+  function sub_int int int : int
+
+  function mul_int int int : int
+
+  function div_int int int : int
+
+  function mod_int int int : int
+
+  function neg_int int : int
+
+  predicate zwf_zero (a : int) (b : int) = ((Int.(<=) 0 b) /\ (Int.(<) a b))
+
+  type farray 'a = A.map int 'a
+
+  function access (m:farray 'a1) (k:int) : 'a1 = A.get m k
+
+  function update (m:farray 'a1) (k:int) (v:'a1) : (farray 'a1) = A.set m k v
+
+
+
+  function array_length (farray 'a1) : int
+
+  predicate sorted_array (t : (farray int)) (i : int) (j : int) =
+    (forall k1:int.
+      (forall k2:int.
+        ((((Int.(<=) i k1) /\ (Int.(<=) k1 k2)) /\ (Int.(<=) k2 j)) ->
+         (Int.(<=) (access t k1 : int) (access t k2 : int)))))
+
+  predicate exchange (a1 : (farray 'a1)) (a2 : (farray 'a1)) (i : int) (j : int) =
+    (((array_length a1 : int) = (array_length a2 : int)) /\
+     (((access a1 i : 'a1) = (access a2 j : 'a1)) /\
+      (((access a2 i : 'a1) = (access a1 j : 'a1)) /\
+       (forall k:int.
+         (((k <> i) /\ (k <> j)) ->
+          ((access a1 k : 'a1) = (access a2 k : 'a1)))))))
+
+  predicate permut (farray 'a1) (farray 'a1) int int
+
+  axiom Permut_refl:
+    (forall t:(farray 'a1). (forall l:int. (forall u:int. (permut t t l u))))
+
+  axiom Permut_sym:
+    (forall t1:(farray 'a1).
+      (forall t2:(farray 'a1).
+        (forall l:int.
+          (forall u:int. ((permut t1 t2 l u) -> (permut t2 t1 l u))))))
+
+  axiom Permut_trans:
+    (forall t1:(farray 'a1).
+      (forall t2:(farray 'a1).
+        (forall t3:(farray 'a1).
+          (forall l:int.
+            (forall u:int.
+              ((permut t1 t2 l u) ->
+               ((permut t2 t3 l u) -> (permut t1 t3 l u))))))))
+
+  axiom Permut_exchange:
+    (forall a1:(farray 'a1).
+      (forall a2:(farray 'a1).
+        (forall l:int.
+          (forall u:int.
+            (forall i:int.
+              (forall j:int.
+                (((Int.(<=) l i) /\ (Int.(<=) i u)) ->
+                 (((Int.(<=) l j) /\ (Int.(<=) j u)) ->
+                  ((exchange a1 a2 i j) -> (permut a1 a2 l u))))))))))
+
+  axiom Exchange_upd:
+    (forall a:(farray 'a1).
+      (forall i:int.
+        (forall j:int.
+          (exchange a (update (update a i (access a j : 'a1) : (farray 'a1)) j (access a i : 'a1) : (farray 'a1)) i j))))
+
+  axiom Permut_weakening:
+    (forall a1:(farray 'a1).
+      (forall a2:(farray 'a1).
+        (forall l1:int.
+          (forall r1:int.
+            (forall l2:int.
+              (forall r2:int.
+                ((((Int.(<=) l1 l2) /\ (Int.(<=) l2 r2)) /\
+                  (Int.(<=) r2 r1)) ->
+                 ((permut a1 a2 l2 r2) -> (permut a1 a2 l1 r1)))))))))
+
+  axiom Permut_eq:
+    (forall a1:(farray 'a1).
+      (forall a2:(farray 'a1).
+        (forall l:int.
+          (forall u:int.
+            ((Int.(<=) l u) ->
+             ((permut a1 a2 l u) ->
+              (forall i:int.
+                (((Int.(<) i l) \/ (Int.(<) u i)) ->
+                 ((access a2 i : 'a1) = (access a1 i : 'a1))))))))))
+
+  predicate permutation (a1 : (farray 'a1)) (a2 : (farray 'a1)) =
+    (permut a1 a2 0 (Int.(-) (array_length a1 : int) 1 : int))
+
+  axiom Array_length_update:
+    (forall a:(farray 'a1).
+      (forall i:int.
+        (forall v:'a1.
+          ((array_length (update a i v : (farray 'a1)) : int) = (array_length a : int)))))
+
+  axiom Permut_array_length:
+    (forall a1:(farray 'a1).
+      (forall a2:(farray 'a1).
+        (forall l:int.
+          (forall u:int.
+            ((permut a1 a2 l u) ->
+             ((array_length a1 : int) = (array_length a2 : int)))))))
+
+  goal Swap_po_1:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (Int.(<=) 0 i)))))
+
+  goal Swap_po_2:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (Int.(<) i (array_length t : int))))))
+
+  goal Swap_po_3:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+            (forall result:int.
+              ((result = (access t i : int)) -> (Int.(<=) 0 j))))))))
+
+  goal Swap_po_4:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+            (forall result:int.
+              ((result = (access t i : int)) ->
+               (Int.(<) j (array_length t : int)))))))))
+
+  goal Swap_po_5:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+            (forall result:int.
+              ((result = (access t i : int)) ->
+               (((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int))) ->
+                (forall result0:int.
+                  ((result0 = (access t j : int)) ->
+                   (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                    (forall t0:(farray int).
+                      ((t0 = (update t i result0 : (farray int))) ->
+                       (Int.(<) j (array_length t0 : int)))))))))))))))
+
+  goal Swap_po_6:
+    (forall i:int.
+      (forall j:int.
+        (forall t:(farray int).
+          ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) /\
+            ((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int)))) ->
+           (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+            (forall result:int.
+              ((result = (access t i : int)) ->
+               (((Int.(<=) 0 j) /\ (Int.(<) j (array_length t : int))) ->
+                (forall result0:int.
+                  ((result0 = (access t j : int)) ->
+                   (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                    (forall t0:(farray int).
+                      ((t0 = (update t i result0 : (farray int))) ->
+                       (((Int.(<=) 0 j) /\
+                         (Int.(<) j (array_length t0 : int))) ->
+                        (forall t1:(farray int).
+                          ((t1 = (update t0 j result : (farray int))) ->
+                           (exchange t1 t i j)))))))))))))))))
+
+  predicate why3_Maximize (t : (farray int)) (n : int) (x : int) (k : int) =
+    (forall i:int.
+      (((Int.(<=) k i) /\ (Int.(<=) i n)) -> (Int.(<=) (access t k : int) x)))
+
+  goal Maximum_po_1:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k = 0) -> (Int.(<=) 0 i)))))))
+
+  goal Maximum_po_2:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k = 0) -> (Int.(<=) i n)))))))
+
+  goal Maximum_po_3:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k = 0) -> (why3_Maximize t n (access t i : int) 0)))))))
+
+  goal Maximum_po_4:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) -> (Int.(<=) 0 (Int.(-) k 1 : int))))))))
+
+  goal Maximum_po_5:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (Int.(<) (Int.(-) k 1 : int) (array_length t : int))))))))
+
+  goal Maximum_po_6:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (Int.(<=) 0 i))))))))))
+
+  goal Maximum_po_7:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (Int.(<) i (array_length t : int)))))))))))
+
+  goal Maximum_po_8:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) -> (Int.(<=) 0 k))))))))))))))
+
+  goal Maximum_po_9:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (Int.(<) (Int.(-) k 1 : int) k))))))))))))))
+
+  goal Maximum_po_10:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<=) (Int.(-) k 1 : int) (Int.(-) k 1 : int))))))))))))))))
+
+  goal Maximum_po_11:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<=) (Int.(-) k 1 : int) n)))))))))))))))
+
+  goal Maximum_po_12:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<) n (array_length t : int))))))))))))))))
+
+  goal Maximum_po_13:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (why3_Maximize t n (access t (Int.(-) k 1 : int) : int) (Int.(-) k 1 : int))))))))))))))))
+
+  goal Maximum_po_14:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        ((((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                           (Int.(<=) (Int.(-) k 1 : int) (Int.(-) k 1 : int))) /\
+                          ((Int.(<=) (Int.(-) k 1 : int) n) /\
+                           ((Int.(<) n (array_length t : int)) /\
+                            (why3_Maximize t n (access t (Int.(-) k 1 : int) : int) (Int.(-) k 1 : int))))) ->
+                         (forall result1:int.
+                           ((((Int.(<=) 0 result1) /\ (Int.(<=) result1 n)) /\
+                             (why3_Maximize t n (access t result1 : int) 0)) ->
+                            (Int.(<=) 0 result1))))))))))))))))))
+
+  goal Maximum_po_15:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(>) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        ((((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                           (Int.(<=) (Int.(-) k 1 : int) (Int.(-) k 1 : int))) /\
+                          ((Int.(<=) (Int.(-) k 1 : int) n) /\
+                           ((Int.(<) n (array_length t : int)) /\
+                            (why3_Maximize t n (access t (Int.(-) k 1 : int) : int) (Int.(-) k 1 : int))))) ->
+                         (forall result1:int.
+                           ((((Int.(<=) 0 result1) /\ (Int.(<=) result1 n)) /\
+                             (why3_Maximize t n (access t result1 : int) 0)) ->
+                            (Int.(<=) result1 n))))))))))))))))))
+
+  goal Maximum_po_16:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) -> (Int.(<=) 0 k))))))))))))))
+
+  goal Maximum_po_17:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (Int.(<) (Int.(-) k 1 : int) k))))))))))))))
+
+  goal Maximum_po_18:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<=) (Int.(-) k 1 : int) i)))))))))))))))
+
+  goal Maximum_po_19:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<=) i n)))))))))))))))
+
+  goal Maximum_po_20:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (Int.(<) n (array_length t : int))))))))))))))))
+
+  goal Maximum_po_21:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        (why3_Maximize t n (access t i : int) (Int.(-) k 1 : int))))))))))))))))
+
+  goal Maximum_po_22:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        ((((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                           (Int.(<=) (Int.(-) k 1 : int) i)) /\
+                          ((Int.(<=) i n) /\
+                           ((Int.(<) n (array_length t : int)) /\
+                            (why3_Maximize t n (access t i : int) (Int.(-) k 1 : int))))) ->
+                         (forall result1:int.
+                           ((((Int.(<=) 0 result1) /\ (Int.(<=) result1 n)) /\
+                             (why3_Maximize t n (access t result1 : int) 0)) ->
+                            (Int.(<=) 0 result1))))))))))))))))))
+
+  goal Maximum_po_23:
+    (forall n:int.
+      (forall k:int.
+        (forall i:int.
+          (forall t:(farray int).
+            ((((Int.(<=) 0 k) /\ (Int.(<=) k i)) /\
+              ((Int.(<=) i n) /\
+               ((Int.(<) n (array_length t : int)) /\
+                (why3_Maximize t n (access t i : int) k)))) ->
+             ((k <> 0) ->
+              (((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                (Int.(<) (Int.(-) k 1 : int) (array_length t : int))) ->
+               (forall result:int.
+                 ((result = (access t (Int.(-) k 1 : int) : int)) ->
+                  (((Int.(<=) 0 i) /\ (Int.(<) i (array_length t : int))) ->
+                   (forall result0:int.
+                     ((result0 = (access t i : int)) ->
+                      ((Int.(<=) result result0) ->
+                       (((Int.(<=) 0 k) /\ (Int.(<) (Int.(-) k 1 : int) k)) ->
+                        ((((Int.(<=) 0 (Int.(-) k 1 : int)) /\
+                           (Int.(<=) (Int.(-) k 1 : int) i)) /\
+                          ((Int.(<=) i n) /\
+                           ((Int.(<) n (array_length t : int)) /\
+                            (why3_Maximize t n (access t i : int) (Int.(-) k 1 : int))))) ->
+                         (forall result1:int.
+                           ((((Int.(<=) 0 result1) /\ (Int.(<=) result1 n)) /\
+                             (why3_Maximize t n (access t result1 : int) 0)) ->
+                            (Int.(<=) result1 n))))))))))))))))))
+
+  goal Maxisort_po_1:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (Int.(<=) 0 (Int.(+) (Int.(-) result 1 : int) 1 : int))))))
+
+  goal Maxisort_po_2:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (Int.(<=) (Int.(+) (Int.(-) result 1 : int) 1 : int) (array_length t : int))))))
+
+  goal Maxisort_po_3:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (sorted_array t (Int.(+) (Int.(-) result 1 : int) 1 : int) (Int.(-) (array_length t : int) 1 : int))))))
+
+  goal Maxisort_po_4:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) -> (permutation t t)))))
+
+  goal Maxisort_po_5:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          ((Int.(<) (Int.(+) (Int.(-) result 1 : int) 1 : int) (array_length t : int)) ->
+           (why3_Maximize t (Int.(-) result 1 : int) (access t (Int.(+) (Int.(-) result 1 : int) 1 : int) : int) 0))))))
+
+  goal Maxisort_po_6:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) -> (Int.(<=) 0 i)))))))))
+
+  goal Maxisort_po_7:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) -> (Int.(<=) i i)))))))))
+
+  goal Maxisort_po_8:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) -> (Int.(<=) i i)))))))))
+
+  goal Maxisort_po_9:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) -> (Int.(<) i (array_length t0 : int))))))))))
+
+  goal Maxisort_po_10:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) -> (why3_Maximize t0 i (access t0 i : int) i)))))))))
+
+  goal Maxisort_po_11:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    (Int.(<=) 0 i))))))))))))
+
+  goal Maxisort_po_12:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    (Int.(<) i (array_length t0 : int)))))))))))))
+
+  goal Maxisort_po_13:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    (Int.(<=) 0 result0))))))))))))
+
+  goal Maxisort_po_14:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    (Int.(<) result0 (array_length t0 : int)))))))))))))
+
+  goal Maxisort_po_15:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           (Int.(<=) 0 (Int.(+) i0 1 : int))))))))))))))))))
+
+  goal Maxisort_po_16:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           (Int.(<=) (Int.(+) i0 1 : int) (array_length t1 : int))))))))))))))))))
+
+  goal Maxisort_po_17:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           (sorted_array t1 (Int.(+) i0 1 : int) (Int.(-) (array_length t1 : int) 1 : int))))))))))))))))))
+
+  goal Maxisort_po_18:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) -> (permutation t1 t)))))))))))))))))
+
+  goal Maxisort_po_19:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           ((Int.(<) (Int.(+) i0 1 : int) (array_length t1 : int)) ->
+                            (why3_Maximize t1 i0 (access t1 (Int.(+) i0 1 : int) : int) 0))))))))))))))))))
+
+  goal Maxisort_po_20:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           (Int.(<=) 0 (Int.(+) i 1 : int))))))))))))))))))
+
+  goal Maxisort_po_21:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(>=) i 0) ->
+                ((((Int.(<=) 0 i) /\ (Int.(<=) i i)) /\
+                  ((Int.(<=) i i) /\
+                   ((Int.(<) i (array_length t0 : int)) /\
+                    (why3_Maximize t0 i (access t0 i : int) i)))) ->
+                 (forall result0:int.
+                   ((((Int.(<=) 0 result0) /\ (Int.(<=) result0 i)) /\
+                     (why3_Maximize t0 i (access t0 result0 : int) 0)) ->
+                    ((((Int.(<=) 0 i) /\ (Int.(<) i (array_length t0 : int))) /\
+                      ((Int.(<=) 0 result0) /\
+                       (Int.(<) result0 (array_length t0 : int)))) ->
+                     (forall t1:(farray int).
+                       ((exchange t1 t0 i result0) ->
+                        (forall i0:int.
+                          ((i0 = (Int.(-) i 1 : int)) ->
+                           (Int.(<) (Int.(+) i0 1 : int) (Int.(+) i 1 : int))))))))))))))))))
+
+  goal Maxisort_po_22:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(<) i 0) ->
+                (sorted_array t0 0 (Int.(-) (array_length t0 : int) 1 : int))))))))))
+
+  goal Maxisort_po_23:
+    (forall t:(farray int).
+      ((Int.(<=) 0 (array_length t : int)) ->
+       (forall result:int.
+         ((result = (array_length t : int)) ->
+          (forall i:int.
+            (forall t0:(farray int).
+              ((((Int.(<=) 0 (Int.(+) i 1 : int)) /\
+                 (Int.(<=) (Int.(+) i 1 : int) (array_length t0 : int))) /\
+                ((sorted_array t0 (Int.(+) i 1 : int) (Int.(-) (array_length t0 : int) 1 : int)) /\
+                 ((permutation t0 t) /\
+                  ((Int.(<) (Int.(+) i 1 : int) (array_length t0 : int)) ->
+                   (why3_Maximize t0 i (access t0 (Int.(+) i 1 : int) : int) 0))))) ->
+               ((Int.(<) i 0) -> (permutation t0 t)))))))))
+
+
+end

@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE why3session PUBLIC "-//Why3//proof session v5//EN"
+"http://why3.lri.fr/why3session.dtd">
+<why3session shape_version="4">
+<prover id="2" name="Alt-Ergo" version="0.99.1" timelimit="5" steplimit="0" memlimit="1000"/>
+<file name="../selection_sort.mlw">
+<theory name="SelectionSort" sum="f0c051cb86e7105738ce04aec9203f36">
+ <goal name="WP_parameter selection_sort" expl="VC for selection_sort">
+ <transf name="split_goal_wp">
+  <goal name="WP_parameter selection_sort.1" expl="postcondition">
+  <proof prover="2" timelimit="10" memlimit="0"><result status="valid" time="0.00" steps="9"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.2" expl="loop invariant init">
+  <proof prover="2" timelimit="10" memlimit="0"><result status="valid" time="0.02" steps="11"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.3" expl="type invariant">
+  <proof prover="2"><result status="valid" time="0.01" steps="7"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.4" expl="precondition">
+  <proof prover="2"><result status="valid" time="0.02" steps="8"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.5" expl="assertion">
+  <proof prover="2"><result status="valid" time="0.02" steps="11"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.6" expl="loop invariant preservation">
+  <transf name="split_goal_wp">
+   <goal name="WP_parameter selection_sort.6.1" expl="VC for selection_sort">
+   <proof prover="2"><result status="valid" time="0.08" steps="12"/></proof>
+   </goal>
+   <goal name="WP_parameter selection_sort.6.2" expl="VC for selection_sort">
+   <proof prover="2"><result status="valid" time="0.04" steps="12"/></proof>
+   </goal>
+   <goal name="WP_parameter selection_sort.6.3" expl="VC for selection_sort">
+   <proof prover="2"><result status="valid" time="0.01" steps="15"/></proof>
+   </goal>
+  </transf>
+  </goal>
+  <goal name="WP_parameter selection_sort.7" expl="assertion">
+  <proof prover="2"><result status="valid" time="0.01" steps="16"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.8" expl="loop invariant preservation">
+  <proof prover="2"><result status="valid" time="0.02" steps="49"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.9" expl="loop invariant init">
+  <proof prover="2"><result status="valid" time="0.01" steps="19"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.10" expl="index in array bounds">
+  <proof prover="2"><result status="valid" time="0.01" steps="12"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.11" expl="index in array bounds">
+  <proof prover="2"><result status="valid" time="0.02" steps="14"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.12" expl="loop invariant preservation">
+  <proof prover="2"><result status="valid" time="0.01" steps="36"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.13" expl="loop invariant preservation">
+  <proof prover="2"><result status="valid" time="0.02" steps="27"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.14" expl="precondition">
+  <proof prover="2"><result status="valid" time="0.02" steps="11"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.15" expl="assertion">
+  <proof prover="2"><result status="valid" time="0.02" steps="30"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.16" expl="loop invariant preservation">
+  <transf name="split_goal_wp">
+   <goal name="WP_parameter selection_sort.16.1" expl="VC for selection_sort">
+   <transf name="inline_goal">
+    <goal name="WP_parameter selection_sort.16.1.1" expl="VC for selection_sort">
+    <transf name="inline_goal">
+     <goal name="WP_parameter selection_sort.16.1.1.1" expl="VC for selection_sort">
+     <transf name="inline_goal">
+      <goal name="WP_parameter selection_sort.16.1.1.1.1" expl="VC for selection_sort">
+      <proof prover="2"><result status="valid" time="0.19" steps="302"/></proof>
+      </goal>
+     </transf>
+     </goal>
+    </transf>
+    </goal>
+   </transf>
+   </goal>
+   <goal name="WP_parameter selection_sort.16.2" expl="VC for selection_sort">
+   <proof prover="2"><result status="valid" time="0.02" steps="24"/></proof>
+   </goal>
+   <goal name="WP_parameter selection_sort.16.3" expl="VC for selection_sort">
+   <transf name="inline_goal">
+    <goal name="WP_parameter selection_sort.16.3.1" expl="VC for selection_sort">
+    <transf name="inline_goal">
+     <goal name="WP_parameter selection_sort.16.3.1.1" expl="VC for selection_sort">
+     <transf name="inline_goal">
+      <goal name="WP_parameter selection_sort.16.3.1.1.1" expl="VC for selection_sort">
+      <proof prover="2"><result status="valid" time="0.35" steps="293"/></proof>
+      </goal>
+     </transf>
+     </goal>
+    </transf>
+    </goal>
+   </transf>
+   </goal>
+  </transf>
+  </goal>
+  <goal name="WP_parameter selection_sort.17" expl="assertion">
+  <proof prover="2"><result status="valid" time="0.02" steps="19"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.18" expl="loop invariant preservation">
+  <proof prover="2"><result status="valid" time="0.06" steps="55"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.19" expl="type invariant">
+  <proof prover="2"><result status="valid" time="0.02" steps="4"/></proof>
+  </goal>
+  <goal name="WP_parameter selection_sort.20" expl="postcondition">
+  <proof prover="2" timelimit="10" memlimit="0"><result status="valid" time="0.02" steps="4"/></proof>
+  </goal>
+ </transf>
+ </goal>
+ <goal name="WP_parameter test1" expl="VC for test1">
+ <proof prover="2"><result status="valid" time="0.01" steps="6"/></proof>
+ </goal>
+ <goal name="WP_parameter test2" expl="VC for test2">
+ <proof prover="2"><result status="valid" time="0.02" steps="24"/></proof>
+ </goal>
+ <goal name="WP_parameter bench" expl="VC for bench">
+ <proof prover="2"><result status="valid" time="0.02" steps="21"/></proof>
+ </goal>
+</theory>
+</file>
+</why3session>

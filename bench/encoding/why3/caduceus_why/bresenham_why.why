@@ -1,0 +1,340 @@
+theory Why2
+  use unit_inf.Unit
+  use int.Int
+  use int.ComputerDivision
+  use real.Real
+  use bool_inf.Bool
+  predicate eq_unit Unit.unit Unit.unit
+
+  predicate neq_unit Unit.unit Unit.unit
+
+  predicate eq_bool Bool.bool Bool.bool
+
+  predicate neq_bool Bool.bool Bool.bool
+
+  predicate lt_int int int
+
+  predicate le_int int int
+
+  predicate gt_int int int
+
+  predicate ge_int int int
+
+  predicate eq_int int int
+
+  predicate neq_int int int
+
+  function add_int int int : int
+
+  function sub_int int int : int
+
+  function mul_int int int : int
+
+  function div_int int int : int
+
+  function mod_int int int : int
+
+  function neg_int int : int
+
+  predicate zwf_zero (a : int) (b : int) = ((Int.(<=) 0 b) /\ (Int.(<) a b))
+
+  function x2  : int
+
+  function y2  : int
+
+  axiom First_octant:
+    ((Int.(<=) 0 (y2 : int)) /\ (Int.(<=) (y2 : int) (x2 : int)))
+
+  function abs int : int
+
+  axiom Abs_def:
+    (forall x:int.
+      (((Int.(>=) x 0) /\ ((abs x : int) = x)) \/
+       ((Int.(<=) x 0) /\ ((abs x : int) = (Int.(-_) x : int)))))
+
+  predicate best (x : int) (y : int) =
+    (forall y':int.
+      (Int.(<=) (abs (Int.(-) (Int.(*) (x2 : int) y : int) (Int.(*) x (y2 : int) : int) : int) : int) (abs (Int.(-) (Int.(*) (x2 : int) y' : int) (Int.(*) x (y2 : int) : int) : int) : int)))
+
+  predicate why3_Invariant (x : int) (y : int) (e : int) =
+    ((e = (Int.(-) (Int.(*) (Int.(*) 2 (Int.(+) x 1 : int) : int) (y2 : int) : int) (Int.(*) (Int.(+) (Int.(*) 2 y : int) 1 : int) (x2 : int) : int) : int)) /\
+     ((Int.(<=) (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) e) /\
+      (Int.(<=) e (Int.(*) 2 (y2 : int) : int))))
+
+  axiom Invariant_is_ok:
+    (forall x:int.
+      (forall y:int. (forall e:int. ((why3_Invariant x y e) -> (best x y)))))
+
+  goal Bresenham_po_1:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (Int.(<=) 0 x)))))))
+
+  goal Bresenham_po_2:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (Int.(<=) x (Int.(+) (x2 : int) 1 : int))))))))
+
+  goal Bresenham_po_3:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (why3_Invariant x y e)))))))
+
+  goal Bresenham_po_4:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) -> (best x0 y0))))))))))))
+
+  goal Bresenham_po_5:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(<) e0 0) ->
+                       (forall e1:int.
+                         ((e1 = (Int.(+) e0 (Int.(*) 2 (y2 : int) : int) : int)) ->
+                          (forall x1:int.
+                            ((x1 = (Int.(+) x0 1 : int)) -> (Int.(<=) 0 x1))))))))))))))))))
+
+  goal Bresenham_po_6:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(<) e0 0) ->
+                       (forall e1:int.
+                         ((e1 = (Int.(+) e0 (Int.(*) 2 (y2 : int) : int) : int)) ->
+                          (forall x1:int.
+                            ((x1 = (Int.(+) x0 1 : int)) ->
+                             (Int.(<=) x1 (Int.(+) (x2 : int) 1 : int)))))))))))))))))))
+
+  goal Bresenham_po_7:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(<) e0 0) ->
+                       (forall e1:int.
+                         ((e1 = (Int.(+) e0 (Int.(*) 2 (y2 : int) : int) : int)) ->
+                          (forall x1:int.
+                            ((x1 = (Int.(+) x0 1 : int)) ->
+                             (why3_Invariant x1 y0 e1))))))))))))))))))
+
+  goal Bresenham_po_8:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(<) e0 0) ->
+                       (forall e1:int.
+                         ((e1 = (Int.(+) e0 (Int.(*) 2 (y2 : int) : int) : int)) ->
+                          (forall x1:int.
+                            ((x1 = (Int.(+) x0 1 : int)) ->
+                             (Int.(<=) 0 (Int.(-) (Int.(+) (x2 : int) 1 : int) x0 : int)))))))))))))))))))
+
+  goal Bresenham_po_9:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(<) e0 0) ->
+                       (forall e1:int.
+                         ((e1 = (Int.(+) e0 (Int.(*) 2 (y2 : int) : int) : int)) ->
+                          (forall x1:int.
+                            ((x1 = (Int.(+) x0 1 : int)) ->
+                             (Int.(<) (Int.(-) (Int.(+) (x2 : int) 1 : int) x1 : int) (Int.(-) (Int.(+) (x2 : int) 1 : int) x0 : int)))))))))))))))))))
+
+  goal Bresenham_po_10:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(>=) e0 0) ->
+                       (forall y1:int.
+                         ((y1 = (Int.(+) y0 1 : int)) ->
+                          (forall e1:int.
+                            ((e1 = (Int.(+) e0 (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) : int)) ->
+                             (forall x1:int.
+                               ((x1 = (Int.(+) x0 1 : int)) ->
+                                (Int.(<=) 0 x1))))))))))))))))))))
+
+  goal Bresenham_po_11:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(>=) e0 0) ->
+                       (forall y1:int.
+                         ((y1 = (Int.(+) y0 1 : int)) ->
+                          (forall e1:int.
+                            ((e1 = (Int.(+) e0 (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) : int)) ->
+                             (forall x1:int.
+                               ((x1 = (Int.(+) x0 1 : int)) ->
+                                (Int.(<=) x1 (Int.(+) (x2 : int) 1 : int)))))))))))))))))))))
+
+  goal Bresenham_po_12:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(>=) e0 0) ->
+                       (forall y1:int.
+                         ((y1 = (Int.(+) y0 1 : int)) ->
+                          (forall e1:int.
+                            ((e1 = (Int.(+) e0 (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) : int)) ->
+                             (forall x1:int.
+                               ((x1 = (Int.(+) x0 1 : int)) ->
+                                (why3_Invariant x1 y1 e1))))))))))))))))))))
+
+  goal Bresenham_po_13:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(>=) e0 0) ->
+                       (forall y1:int.
+                         ((y1 = (Int.(+) y0 1 : int)) ->
+                          (forall e1:int.
+                            ((e1 = (Int.(+) e0 (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) : int)) ->
+                             (forall x1:int.
+                               ((x1 = (Int.(+) x0 1 : int)) ->
+                                (Int.(<=) 0 (Int.(-) (Int.(+) (x2 : int) 1 : int) x0 : int)))))))))))))))))))))
+
+  goal Bresenham_po_14:
+    (forall x:int.
+      ((x = 0) ->
+       (forall y:int.
+         ((y = 0) ->
+          (forall e:int.
+            ((e = (Int.(-) (Int.(*) 2 (y2 : int) : int) (x2 : int) : int)) ->
+             (forall e0:int.
+               (forall x0:int.
+                 (forall y0:int.
+                   ((((Int.(<=) 0 x0) /\
+                      (Int.(<=) x0 (Int.(+) (x2 : int) 1 : int))) /\
+                     (why3_Invariant x0 y0 e0)) ->
+                    ((Int.(<=) x0 (x2 : int)) ->
+                     ((best x0 y0) ->
+                      ((Int.(>=) e0 0) ->
+                       (forall y1:int.
+                         ((y1 = (Int.(+) y0 1 : int)) ->
+                          (forall e1:int.
+                            ((e1 = (Int.(+) e0 (Int.(*) 2 (Int.(-) (y2 : int) (x2 : int) : int) : int) : int)) ->
+                             (forall x1:int.
+                               ((x1 = (Int.(+) x0 1 : int)) ->
+                                (Int.(<) (Int.(-) (Int.(+) (x2 : int) 1 : int) x1 : int) (Int.(-) (Int.(+) (x2 : int) 1 : int) x0 : int)))))))))))))))))))))
+
+
+end

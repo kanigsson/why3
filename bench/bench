@@ -1,0 +1,255 @@
+#!/bin/bash
+
+# auto bench for why
+
+# Useless in this script ?
+# export WHY3LIB=lib
+# export WHY3DATA=.
+# export WHY3LOADPATH=theories
+
+suffix=$1
+
+goods () {
+    pgm="bin/why3prove$suffix"
+    for f in $1/*.[wm][hl][yw] ; do
+	echo -n "  $f... "
+	# running Why
+	if ! $pgm $2 $f > /dev/null 2>&1; then
+	    echo "FAILED!"
+#            echo "env: WHY3DATA='$WHY3DATA'"
+            echo "invocation: $pgm $2 $f"
+            echo "result:"
+	    $pgm $2 $f
+	    exit 1
+	fi
+	echo "ok"
+    done
+}
+
+bads () {
+    pgm="bin/why3prove$suffix"
+    for f in $1/*.[wm][hl][yw] ; do
+	echo -n "  $f... "
+	if $pgm $2 $f > /dev/null 2>&1; then
+	    echo "SHOULD FAIL!"
+#            echo "env: WHY3DATA='$WHY3DATA'"
+            echo "invocation: $pgm $2 $f"
+	    exit 1
+	fi
+	echo "ok"
+    done
+}
+
+drivers () {
+    pgm="bin/why3prove$suffix"
+    for f in $1/*.drv; do
+        if [[ $f == drivers/ocaml*.drv ]]; then continue; fi
+	echo -n "  $f... "
+	# running Why
+	if ! echo "theory Test goal G : 1=2 end" | $pgm -F why --driver $f - > /dev/null 2>&1; then
+	    echo "why FAILED"
+            echo "theory Test goal G : 1=2 end" | $pgm -F why --driver $f -
+	    exit 1
+	fi
+	echo "ok"
+    done
+}
+
+valid_goals () {
+    pgm="bin/why3prove$suffix"
+    for f in $1/*.mlw; do
+	echo -n "  "$f"... "
+	if $pgm -t 10 -P alt-ergo $f | grep -q -v Valid; then
+	    echo "valid test $f failed!"
+	    echo "$pgm -P alt-ergo $f"
+	    $pgm -t 10 -P alt-ergo $f
+	    exit 1
+       else
+	    echo "ok"
+       fi
+    done
+}
+
+invalid_goals () {
+    pgm="bin/why3prove$suffix"
+    for f in $1/*.mlw; do
+	echo -n "  "$f"... "
+	if $pgm -t 3 -P alt-ergo $f | grep -q Valid; then
+	    echo "invalid test $f failed!"
+	    echo "$pgm -P alt-ergo $f"
+	    $pgm -t 3 -P alt-ergo $f
+	    exit 1
+        else
+	    echo "ok"
+       fi
+    done
+}
+
+execute () {
+    pgm="bin/why3execute$suffix"
+    echo -n "$1 $2... "
+    if $pgm $1 $2 > /dev/null 2>&1; then
+        echo "ok"
+    else
+        echo "execution test failed!"
+        echo $pgm $1 $2
+        $pgm $1 $2
+        exit 1
+    fi
+}
+
+extract_and_run () {
+    dir=$1
+    shift
+    prg=$1
+    shift
+    echo -n "$dir... "
+    rm -f $dir/$prg
+    echo -n "clean... "
+    if BENCH=yes make -C $dir clean > /dev/null 2>&1; then
+        echo -n "extract... "
+        if BENCH=yes make -C $dir extract > /dev/null 2>&1; then
+            echo -n "compile... "
+            if BENCH=yes make -C $dir > /dev/null 2>&1; then
+                echo -n "execute... "
+                if $dir/main.opt "$@" > /dev/null 2>&1; then
+                    echo -n "doc... "
+                    if BENCH=yes make -C $dir doc > /dev/null 2>&1; then
+                        echo "ok"
+                    else
+                        echo "documentation failed!"
+                        echo BENCH=yes make -C $dir doc
+                        BENCH=yes make -C $dir doc
+                        exit 1
+                    fi
+                else
+                    echo "execution failed!"
+                    echo $dir/main.opt "$@"
+                    $dir/main.opt "$@"
+                    exit 1
+                fi
+            else
+                echo "compilation failed!"
+                echo BENCH=yes make -C $dir
+                BENCH=yes make -C $dir
+                exit 1
+            fi
+        else
+            echo "extract failed!"
+            echo BENCH=yes make -C $dir extract
+            BENCH=yes make -C $dir extract
+            exit 1
+        fi
+    else
+        echo "clean failed!"
+        echo BENCH=yes make -C $dir clean
+        BENCH=yes make -C $dir clean
+        exit 1
+    fi
+}
+
+list_stuff () {
+    pgm="bin/why3$suffix"
+    echo -n "$1 "
+    if $pgm $1 > /dev/null 2>&1; then
+        echo "ok"
+    else
+        echo "$pgm $1 FAIL"
+        $pgm $1
+        exit 1
+    fi
+}
+
+echo "=== Checking invalid goals ==="
+invalid_goals bench/invalid
+echo ""
+
+echo "=== Checking theories ==="
+goods theories
+echo ""
+
+echo "=== Checking modules ==="
+goods modules
+goods modules/mach
+echo ""
+
+echo "=== Checking drivers ==="
+drivers drivers
+echo ""
+
+echo "=== Checking bad files ==="
+goods bench/typing/bad --parse-only
+goods bench/programs/bad-typing --parse-only
+bads bench/typing/bad --type-only
+bads bench/programs/bad-typing --type-only
+echo ""
+
+echo "=== Checking good files ==="
+goods bench/typing/good
+goods bench/programs/good
+goods examples/bts
+goods examples/tests
+goods examples/tests-provers
+goods examples/check-builtin
+goods examples/logic
+goods examples
+goods examples/foveoos11-cm
+goods examples/WP_revisited
+goods examples/vacid_0_binary_heaps "-L examples/vacid_0_binary_heaps"
+goods examples/bitvectors "-L examples/bitvectors"
+goods examples/in_progress
+echo ""
+
+echo "=== Checking execution ==="
+execute examples/euler001.mlw Euler001.bench
+execute examples/euler002.mlw Solve.bench
+execute examples/fibonacci.mlw FibRecGhost.bench
+execute examples/fibonacci.mlw FibonacciLogarithmic.bench
+# fails: definition of psymbol eq not found
+# execute examples/same_fringe.mlw SameFringe.bench
+# fails: cannot evaluate condition a=b (how to do it?)
+# execute examples/same_fringe.mlw --exec SameFringe.test5
+# fails: "let" are cloned as "val"
+# execute examples/same_fringe.mlw --exec Test.test1
+execute examples/vstte12_combinators.mlw Combinators.test_SKK
+execute examples/selection_sort.mlw SelectionSort.bench
+execute examples/insertion_sort.mlw InsertionSort.bench
+execute examples/quicksort.mlw Test.bench
+execute examples/conjugate.mlw Test.bench
+# fails: needs support for "val" without code (how to do it?)
+# examples/vacid_0_sparse_array.mlw --exec Harness.bench
+execute examples/knuth_prime_numbers.mlw PrimeNumbers.bench
+execute examples/vstte10_max_sum.mlw TestCase.test_case
+execute examples/verifythis_fm2012_LRS.mlw LCP_test.bench
+execute examples/verifythis_fm2012_LRS.mlw SuffixSort_test.bench
+execute examples/verifythis_fm2012_LRS.mlw SuffixArray_test.bench
+execute examples/verifythis_fm2012_LRS.mlw LRS_test.bench
+execute examples/verifythis_PrefixSumRec.mlw PrefixSumRec.bench
+execute examples/vstte10_queens.mlw NQueens.test8
+# fails: "Cannot decide condition of if: (not ((~)((<<)((~)(0), 8)) = 0))"
+# examples/queens.mlw --exec  NQueensBits.test8
+# fails: "let" are cloned as "val"
+# examples/in_progress/residual.mlw --exec Test.test_astar
+echo ""
+
+echo "=== Extraction to Ocaml ==="
+extract_and_run examples/euler001 euler001__*.ml 1000000
+extract_and_run examples/gcd gcd__*.ml 6 15
+extract_and_run examples/vstte10_max_sum vstte10_max_sum__*.ml
+extract_and_run examples/vstte12_combinators vstte12_combinators__*.ml "((((K K) K) K) K)"
+extract_and_run examples/sudoku sudoku__*.ml 2,0,9,0,0,0,0,1,0,0,0,0,0,6,0,0,0,0,0,5,3,8,0,2,7,0,0,3,0,0,0,0,0,0,0,0,0,0,0,0,7,5,0,0,3,0,4,1,2,0,8,9,0,0,0,0,4,0,9,0,0,2,0,8,0,0,0,0,1,0,0,5,0,0,0,0,0,0,0,7,6
+extract_and_run examples/defunctionalization defunctionalization__*.ml
+echo ""
+
+echo "=== Checking valid goals ==="
+valid_goals bench/valid
+echo ""
+
+echo "=== Checking --list-* ==="
+list_stuff --list-transforms
+list_stuff --list-printers
+list_stuff --list-provers
+list_stuff --list-formats
+list_stuff --list-metas
+list_stuff --list-debug-flags
+echo ""

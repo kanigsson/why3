@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE why3session PUBLIC "-//Why3//proof session v5//EN"
+"http://why3.lri.fr/why3session.dtd">
+<why3session shape_version="4">
+<prover id="0" name="CVC3" version="2.4.1" timelimit="30" steplimit="0" memlimit="1000"/>
+<prover id="3" name="CVC4" version="1.4" timelimit="5" steplimit="0" memlimit="1000"/>
+<prover id="4" name="Alt-Ergo" version="1.00.prv" timelimit="5" steplimit="0" memlimit="1000"/>
+<prover id="5" name="Z3" version="4.3.2" timelimit="5" steplimit="0" memlimit="1000"/>
+<prover id="6" name="Alt-Ergo" version="0.99.1" timelimit="30" steplimit="0" memlimit="1000"/>
+<file name="../vacid_0_build_maze.mlw" expanded="true">
+<theory name="UnionFind_pure" sum="d41d8cd98f00b204e9800998ecf8427e" expanded="true">
+</theory>
+<theory name="UnionFind_sig" sum="d41d8cd98f00b204e9800998ecf8427e" expanded="true">
+</theory>
+<theory name="Graph" sum="d41d8cd98f00b204e9800998ecf8427e" expanded="true">
+</theory>
+<theory name="Graph_sig" sum="d41d8cd98f00b204e9800998ecf8427e" expanded="true">
+</theory>
+<theory name="BuildMaze" sum="3037635504daf26f2568686938bf7f89" expanded="true">
+ <goal name="Ineq1" expl="">
+ <transf name="split_goal_wp">
+  <goal name="Ineq1.1" expl="">
+  <proof prover="6"><result status="valid" time="0.00" steps="5"/></proof>
+  </goal>
+  <goal name="Ineq1.2" expl="">
+  <proof prover="0"><result status="valid" time="0.14"/></proof>
+  </goal>
+ </transf>
+ </goal>
+ <goal name="WP_parameter add_edge_and_union" expl="VC for add_edge_and_union">
+ <transf name="split_goal_wp">
+  <goal name="WP_parameter add_edge_and_union.1" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.01" steps="6"/></proof>
+  </goal>
+  <goal name="WP_parameter add_edge_and_union.2" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.00" steps="7"/></proof>
+  </goal>
+  <goal name="WP_parameter add_edge_and_union.3" expl="postcondition">
+  <proof prover="6"><result status="valid" time="0.29" steps="615"/></proof>
+  </goal>
+ </transf>
+ </goal>
+ <goal name="WP_parameter build_maze" expl="VC for build_maze" expanded="true">
+ <transf name="split_goal_wp" expanded="true">
+  <goal name="WP_parameter build_maze.1" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.00" steps="2"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.2" expl="assertion">
+  <proof prover="6"><result status="valid" time="0.01" steps="17"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.3" expl="loop invariant init">
+  <proof prover="6"><result status="valid" time="0.02" steps="24"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.4" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.01" steps="9"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.5" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.00" steps="12"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.6" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.01" steps="14"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.7" expl="assertion">
+  <proof prover="6"><result status="valid" time="0.01" steps="19"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.8" expl="assertion">
+  <proof prover="5" timelimit="30"><result status="valid" time="0.01"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.9" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.13" steps="50"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.10" expl="precondition">
+  <proof prover="6"><result status="valid" time="0.06" steps="44"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.11" expl="precondition">
+  <proof prover="4"><result status="valid" time="0.24" steps="381"/></proof>
+  <proof prover="5"><result status="valid" time="0.02"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.12" expl="loop invariant preservation">
+  <proof prover="3"><result status="valid" time="0.02"/></proof>
+  <proof prover="5"><result status="valid" time="0.02"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.13" expl="loop invariant preservation">
+  <proof prover="3"><result status="valid" time="2.47"/></proof>
+  <proof prover="4"><result status="valid" time="0.18" steps="175"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.14" expl="loop invariant preservation">
+  <proof prover="6"><result status="valid" time="0.02" steps="33"/></proof>
+  </goal>
+  <goal name="WP_parameter build_maze.15" expl="postcondition">
+  <proof prover="6"><result status="valid" time="0.03" steps="21"/></proof>
+  </goal>
+ </transf>
+ </goal>
+</theory>
+</file>
+</why3session>

@@ -1,0 +1,79 @@
+theory Kept_partial
+  meta "enco_kept" "instantiate"
+end
+
+theory Kept_twin
+  meta "enco_kept" "twin"
+end
+
+theory Partial_incomplete
+  meta "enco_kept" "instantiate"
+  meta "encoding_instantiate : complete" "no"
+end
+
+theory Poly_explicit
+  meta "enco_poly" "explicit"
+end
+
+theory Poly_guard
+  meta "enco_poly" "guard"
+end
+
+theory Poly_deco
+  meta "enco_poly" "decorate"
+end
+
+theory Inst_none
+  meta "select_inst" "none"
+end
+
+theory Inst_goal
+  meta "select_inst" "goal"
+end
+
+theory Inst_all
+  meta "select_inst" "all"
+end
+
+theory Lskept_none
+  meta "select_lskept" "none"
+end
+
+theory Lskept_goal
+  meta "select_lskept" "goal"
+end
+
+theory Lskept_all
+  meta "select_lskept" "all"
+end
+
+theory Lsinst_none
+  meta "select_lsinst" "none"
+end
+
+theory Lsinst_goal
+  meta "select_lsinst" "goal"
+end
+
+theory Lsinst_all
+  meta "select_lsinst" "all"
+end
+
+theory Kept_none
+  meta "select_kept" "none"
+end
+
+theory Kept_goal
+  meta "select_kept" "goal"
+end
+
+theory Kept_all
+  meta "select_kept" "all"
+end
+
+theory KeptIntReal
+  use int.Int
+  use real.Real
+  meta "encoding : kept" type Int.int
+  meta "encoding : kept" type Real.real
+end

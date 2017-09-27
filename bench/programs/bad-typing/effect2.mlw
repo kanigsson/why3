@@ -1,0 +1,8 @@
+
+module M
+
+  use import ref.Ref
+
+  val f (x:int) : unit writes { x.contents }
+
+end

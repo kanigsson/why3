@@ -1,0 +1,7 @@
+theory Bool
+       type bool
+       function ttrue : bool
+       function ffalse : bool
+       
+       axiom Diff : ttrue <> ffalse
+end
