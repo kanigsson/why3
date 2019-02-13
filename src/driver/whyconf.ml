@@ -42,8 +42,7 @@ let why3_regexp_of_string s = (* define a regexp in why3 *)
 (* lib and shared dirs *)
 
 let default_loadpath =
-  [ Filename.concat Config.datadir "theories";
-    Filename.concat Config.datadir "modules"; ]
+  [ Filename.concat Config.datadir "stdlib" ]
 
 let default_conf_file =
   match Config.localdir with
@@ -118,12 +117,14 @@ type prover_upgrade_policy =
   | CPU_keep
   | CPU_upgrade of prover
   | CPU_duplicate of prover
+  | CPU_remove
 
 let print_prover_upgrade_policy fmt p =
   match p with
   | CPU_keep -> Format.fprintf fmt "keep"
   | CPU_upgrade p -> Format.fprintf fmt "upgrade to %a" print_prover p
   | CPU_duplicate p -> Format.fprintf fmt "copy to %a" print_prover p
+  | CPU_remove -> Format.fprintf fmt "remove"
 
 
 
@@ -257,7 +258,7 @@ let load_plugins m =
   let load x =
     try Plugin.load x
     with exn ->
-      Format.eprintf "%s can't be loaded : %a@." x
+      Format.eprintf "%s can't be loaded: %a@." x
         Exn_printer.exn_printer exn in
   List.iter load m.plugins
 
@@ -384,6 +385,8 @@ let set_prover_upgrade_policy prover policy (i, family) =
     match policy with
       | CPU_keep ->
         set_string section "policy" "keep"
+      | CPU_remove ->
+        set_string section "policy" "remove"
       | CPU_upgrade p ->
         let section = set_string section "target_name" p.prover_name in
         let section = set_string section "target_version" p.prover_version in
@@ -480,6 +483,7 @@ let load_policy provers acc (_,section) =
     try
       match get_string section "policy" with
       | "keep" -> Mprover.add source CPU_keep acc
+      | "remove" -> Mprover.add source CPU_remove acc
       | "upgrade" ->
         let target =
           { prover_name = get_string section "target_name";
@@ -536,7 +540,7 @@ let load_main dirname section =
   { libdir    = get_string ~default:default_main.libdir section "libdir";
     datadir   = get_string ~default:default_main.datadir section "datadir";
     libobjdir = Config.libobjdir;
-    loadpath  = List.map (fun f -> Sysutil.absolutize_path dirname [f])
+    loadpath  = List.map (Sysutil.concat dirname)
                          (get_stringl ~default:[] section "loadpath");
     timelimit = get_int ~default:default_main.timelimit section "timelimit";
     memlimit  = get_int ~default:default_main.memlimit section "memlimit";
@@ -562,7 +566,7 @@ let read_config_rc conf_file =
 exception ConfigFailure of string (* filename *) * string
 
 let get_dirname filename =
-  Filename.dirname (Sysutil.absolutize_path (Sys.getcwd ()) [filename])
+  Filename.dirname (Sysutil.concat (Sys.getcwd ()) filename)
 
 let get_config (filename,rc) =
   let dirname = get_dirname filename in
@@ -605,8 +609,8 @@ let read_config conf_file =
   try
     get_config filenamerc
   with e when not (Debug.test_flag Debug.stack_trace) ->
-    Format.fprintf str_formatter "%a" Exn_printer.exn_printer e;
-    raise (ConfigFailure (fst filenamerc, flush_str_formatter ()))
+    let s = Format.asprintf "%a" Exn_printer.exn_printer e in
+    raise (ConfigFailure (fst filenamerc, s))
 
 (** filter prover *)
 type regexp_desc = { reg : Str.regexp; desc : string}
@@ -694,7 +698,7 @@ let merge_config config filename =
   let main = match get_section rc "main" with
     | None -> config.main
     | Some rc ->
-      let loadpath = (List.map (fun f -> Sysutil.absolutize_path dirname [f])
+      let loadpath = (List.map (Sysutil.concat dirname)
         (get_stringl ~default:[] rc "loadpath")) @ config.main.loadpath in
       let plugins =
         (get_stringl ~default:[] rc "plugin") @ config.main.plugins in
@@ -858,7 +862,7 @@ let () = Exn_printer.register (fun fmt e -> match e with
   | WrongMagicNumber ->
       Format.fprintf fmt "outdated config file; rerun 'why3 config'"
   | NonUniqueId ->
-    Format.fprintf fmt "InternalError : two provers share the same id"
+    Format.fprintf fmt "InternalError: two provers share the same id"
   | ProverNotFound (config,fp) ->
     fprintf fmt "No prover in %s corresponds to \"%a\"@."
       (get_conf_file config) print_filter_prover fp
@@ -869,11 +873,11 @@ let () = Exn_printer.register (fun fmt e -> match e with
       provers
   | ParseFilterProver s ->
     fprintf fmt
-      "Syntax error prover identification '%s' : \
+      "Syntax error prover identification '%s': \
        name[,version[,alternative]|,,alternative]" s
   | DuplicateShortcut s ->
     fprintf fmt
-      "Shortcut %s appears two times in the configuration file" s
+      "Shortcut %s appears twice in the configuration file" s
   | _ -> raise e)
 
 
@@ -922,9 +926,10 @@ module Args = struct
     let lp = List.rev_append !opt_loadpath (loadpath main) in
     config, base_config, Env.create_env lp
 
-  let exit_with_usage options usage =
-    Arg.usage (align_options options) usage;
-    exit 1
+  let exit_with_usage ?(exit_code=1) ?(extra_help=Format.pp_print_newline) options usage =
+    let options = align_options options in
+    Format.printf "@[%s%a@]" (Arg.usage_string options usage) extra_help ();
+    exit exit_code
 end
 
 

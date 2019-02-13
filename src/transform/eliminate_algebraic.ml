@@ -68,7 +68,7 @@ let compile_match = Trans.decl (fun d -> [decl_map rewriteT d]) None
 type state = {
   mt_map : lsymbol Mts.t;       (* from type symbols to selector functions *)
   pj_map : lsymbol list Mls.t;  (* from constructors to projections *)
-  tp_map : decl Mid.t;          (* skipped tuple symbols *)
+  tp_map : (decl*theory) Mid.t; (* skipped tuple symbols *)
   inf_ts : Sts.t;               (* infinite types *)
   ma_map : bool list Mts.t;     (* material type arguments *)
   keep_t : bool;                (* keep algebraic type definitions *)
@@ -173,10 +173,10 @@ and rewriteF kn state av sign f = match f.t_node with
       let vl, tr, f1, close = t_open_quant_cb bf in
       let tr = TermTF.tr_map (rewriteT kn state)
                       (rewriteF kn state Svs.empty sign) tr in
-      let av = List.fold_left (fun s v -> Svs.add v s) av vl in
+      let av = List.fold_right Svs.add vl av in
       let f1 = rewriteF kn state av sign f1 in
-      (* Preserve labels and location of f *)
-      t_label_copy f (t_quant_simp q (close vl tr f1))
+      (* Preserve attributes and location of f *)
+      t_attr_copy f (t_quant_simp q (close vl tr f1))
   | Tbinop (o, _, _) when (o = Tand && sign) || (o = Tor && not sign) ->
       TermTF.t_map_sign (Util.const (rewriteT kn state))
         (rewriteF kn state av) sign f
@@ -271,6 +271,13 @@ let meta_proj =
            given@ constructor@ at@ the@ specified@ position.@ \
            For@ internal@ use."
 
+(* Adding meta so that counterexamples consider this new projection as a
+   counterexample projection. This allow counterexamples to appear for
+   these values.
+*)
+let add_meta_cnt tsk ls =
+  add_meta tsk meta_projection [MAls ls]
+
 let add_projections (state,task) _ts _ty csl =
   (* declare and define the projection functions *)
   let pj_add (m,tsk) (cs,pl) =
@@ -294,6 +301,7 @@ let add_projections (state,task) _ts _ty csl =
       let ax = t_forall_close (List.rev vl) [] (t_equ hh t) in
       let mal = [MAls ls; MAls cs; MAint (!c - 1); MApr pr] in
       let tsk = add_prop_decl tsk Paxiom pr ax in
+      let tsk = add_meta_cnt tsk ls in
       let tsk = if state.keep_t then add_meta tsk meta_proj mal else tsk in
       ls::pjl, tsk
     in
@@ -342,7 +350,7 @@ let add_tags mts (state,task) (ts,csl) =
     let sts = Sts.add ts sts in
     let add s (ls,_) = List.fold_left (mat_ty sts) s ls.ls_args in
     let stv = List.fold_left add Stv.empty csl in
-    List.map (fun v -> Stv.mem v stv) ts.ts_args
+    List.map (Stv.contains stv) ts.ts_args
   and mat_ty sts stv ty = match ty.ty_node with
     | Tyvar tv -> Stv.add tv stv
     | Tyapp (ts,tl) ->
@@ -416,14 +424,19 @@ let comp t (state,task) = match t.task_decl.td_node with
       comp t (state,task)
 
 let comp t (state,task) = match t.task_decl.td_node with
+  | Use {th_decls = [{td_node = Decl ({d_node = Ddata [ts,_]})}]}
+    when is_ts_tuple ts ->
+      state, task
   | Decl ({ d_node = Ddata [ts,_] } as d) when is_ts_tuple ts ->
-      let tp_map = Mid.add ts.ts_name d state.tp_map in
+      let th = tuple_theory (List.length ts.ts_args) in
+      let tp_map = Mid.add ts.ts_name (d,th) state.tp_map in
       { state with tp_map = tp_map }, task
   | Decl d ->
       let rstate,rtask = ref state, ref task in
-      let add _ d () =
+      let add _ (d,th) () =
         let t = Opt.get (add_decl None d) in
         let state,task = comp t (!rstate,!rtask) in
+        let task = add_tdecl task (create_use th) in
         rstate := state ; rtask := task ; None
       in
       let tp_map = Mid.diff add state.tp_map d.d_syms in
@@ -441,12 +454,12 @@ let eliminate_match =
 
 let meta_elim = register_meta "eliminate_algebraic" [MTstring]
   ~desc:"@[<hov 2>Configure the 'eliminate_algebraic' transformation:@\n\
-    \"keep_types\" : @[keep algebraic type definitions@]@\n\
-    \"keep_enums\" : @[keep monomorphic enumeration types@]@\n\
-    \"keep_recs\"  : @[keep non-recursive records@]@\n\
-    \"no_index\"   : @[do not generate indexing functions@]@\n\
-    \"no_inversion\" : @[do not generate inversion axioms@]@\n\
-    \"no_selector\"  : @[do not generate selector@]@]"
+    - keep_types:   @[keep algebraic type definitions@]@\n\
+    - keep_enums:   @[keep monomorphic enumeration types@]@\n\
+    - keep_recs:    @[keep non-recursive records@]@\n\
+    - no_index:     @[do not generate indexing functions@]@\n\
+    - no_inversion: @[do not generate inversion axioms@]@\n\
+    - no_selector:  @[do not generate selector@]@]"
 
 let eliminate_algebraic = Trans.compose compile_match
   (Trans.on_meta meta_elim (fun ml ->

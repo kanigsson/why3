@@ -51,7 +51,7 @@ let convert_prover_answer (pa: prover_answer) =
   | Timeout           -> "Timeout",""
   | OutOfMemory       -> "OutOfMemory",""
   | StepLimitExceeded -> "StepLimitExceeded",""
-  | Unknown(s,_)      -> "Unknown",s
+  | Unknown s         -> "Unknown",s
   | Failure s         -> "Failure",s
   | HighFailure       -> "HighFailure",""
 
@@ -69,8 +69,8 @@ let convert_unix_process (ps: Unix.process_status) =
 
 let convert_model (m: Model_parser.model) =
   String (Pp.string_of
-            (* By default, we print labels in JSON *)
-            (fun fmt m -> Model_parser.print_model ~print_labels:true fmt m) m)
+            (* By default, we print attributes in JSON *)
+            (fun fmt m -> Model_parser.print_model ~print_attrs:true fmt m) m)
 
 (* TODO pr_model should have a different format *)
 let convert_proof_result (pr: prover_result) =
@@ -106,6 +106,9 @@ let convert_proof_attempt (pas: proof_attempt_status) =
   | Uninstalled p ->
       convert_record ["proof_attempt", String "Uninstalled";
                       "prover", convert_prover_to_json "prover_" p]
+  | Removed p ->
+      convert_record ["proof_attempt", String "Removed";
+                      "prover", convert_prover_to_json "prover_" p]
   | UpgradeProver p ->
       convert_record ["proof_attempt", String "UpgradeProver";
                       "prover", convert_prover_to_json "prover_" p])
@@ -134,6 +137,7 @@ let convert_notification_constructor n =
   | Next_Unproven_Node_Id (_, _) -> String "Next_Unproven_Node_Id"
   | Initialized _                -> String "Initialized"
   | Saved                        -> String "Saved"
+  | Saving_needed _              -> String "Saving_needed"
   | Message _                    -> String "Message"
   | Dead _                       -> String "Dead"
   | Task _                       -> String "Task"
@@ -164,7 +168,9 @@ let convert_request_constructor (r: ide_request) =
   | Remove_subtree _          -> String "Remove_subtree"
   | Copy_paste _              -> String "Copy_paste"
   | Get_first_unproven_node _ -> String "Get_first_unproven_node"
+  | Unfocus_req               -> String "Unfocus_req"
   | Save_req                  -> String "Save_req"
+  | Check_need_saving_req     -> String "Check_need_saving_req"
   | Reload_req                -> String "Reload_req"
   | Exit_req                  -> String "Exit_req"
   | Interrupt_req             -> String "Interrupt_req"
@@ -174,6 +180,7 @@ open Whyconf
 
 let convert_policy u =
   match u with
+  | CPU_remove -> ["policy", String "remove"]
   | CPU_keep -> ["policy", String "keep"]
   | CPU_upgrade p ->
      ["policy", String "upgrade"] @ convert_prover "target_" p
@@ -215,7 +222,9 @@ let print_request_to_json (r: ide_request): Json_base.json =
            "node_ID2", Int to_id]
   | Get_first_unproven_node id ->
       convert_record ["ide_request", cc r;
-           "node_ID", Int id]
+                      "node_ID", Int id]
+  | Check_need_saving_req
+  | Unfocus_req
   | Save_req
   | Reload_req
   | Exit_req
@@ -252,8 +261,9 @@ let convert_message (m: message_notification) =
       convert_record ["mess_notif", cc m;
            "node_ID", Int nid;
            "error", String s]
-  | Transf_error (nid, tr, arg, loc, s, doc) ->
+  | Transf_error (is_fatal, nid, tr, arg, loc, s, doc) ->
       convert_record ["mess_notif", cc m;
+           "is_fatal", Bool is_fatal;
            "node_ID", Int nid;
            "tr_name", String tr;
            "failing_arg", String arg;
@@ -303,7 +313,9 @@ let convert_color (color: color) : Json_base.json =
     | Premise_color -> "Premise_color"
     | Goal_color -> "Goal_color"
     | Error_color -> "Error_color"
-    | Error_line_color -> "Error_line_color")
+    | Error_line_color -> "Error_line_color"
+    | Error_font_color -> "Error_font_color"
+  )
 
 let convert_loc_color (loc,color: Loc.position * color) : Json_base.json =
   let loc = convert_loc loc in
@@ -323,6 +335,7 @@ let parse_color (j: json) : color =
   | String "Goal_color"        -> Goal_color
   | String "Error_color"       -> Error_color
   | String "Error_line_color"  -> Error_line_color
+  | String "Error_font_color"  -> Error_font_color
   | _ -> raise Notcolor
 
 exception Notposition
@@ -378,9 +391,12 @@ let print_notification_to_json (n: notification): json =
            "infos", convert_infos infos]
   | Saved ->
       convert_record ["notification", cc n]
+  | Saving_needed b ->
+     convert_record ["notification", cc n;
+                     "need_saving", Bool b]
   | Message m ->
       convert_record ["notification", cc n;
-           "message", convert_message m]
+                      "message", convert_message m]
   | Dead s ->
       convert_record ["notification", cc n;
            "message", String s]
@@ -482,6 +498,10 @@ let parse_request (constr: string) j =
     let to_id = get_int (get_field j "node_ID2") in
     Copy_paste (from_id, to_id)
 
+  | "Unfocus_req" ->
+    Unfocus_req
+  | "Interrupt_req" ->
+    Interrupt_req
   | "Save_req" ->
     Save_req
   | "Reload_req" ->
@@ -517,7 +537,7 @@ let parse_prover_answer a d =
   | "Timeout"           -> Timeout
   | "OutOfMemory"       -> OutOfMemory
   | "StepLimitExceeded" -> StepLimitExceeded
-  | "Unknown"           -> Unknown (d,None)
+  | "Unknown"           -> Unknown d
   | "Failure"           -> Failure d
   | "HighFailure"       -> HighFailure
   | _                   -> HighFailure
@@ -649,12 +669,13 @@ let parse_message constr j =
 
   | "Transf_error" ->
     let nid = get_int (get_field j "node_ID") in
+    let is_fatal = get_bool (get_field j "is_fatal") in
     let tr_name = get_string (get_field j "tr_name") in
     let arg = get_string (get_field j "failing_arg") in
     let loc = parse_loc (get_field j "loc") in
     let error = get_string (get_field j "error") in
     let doc = get_string (get_field j "doc") in
-    Transf_error (nid, tr_name, arg, loc, error, doc)
+    Transf_error (is_fatal, nid, tr_name, arg, loc, error, doc)
 
   | "Strat_error" ->
     let nid = get_int (get_field j "node_ID") in

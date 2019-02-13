@@ -62,8 +62,6 @@ type proof_node = {
   proofn_name                    : Ident.ident;
   proofn_expl                    : string;
   proofn_parent                  : proof_parent;
-  proofn_checksum                : Termcode.checksum;
-  proofn_shape                   : Termcode.shape;
   proofn_attempts                : proofAttemptID Hprover.t;
   mutable proofn_transformations : transID list;
 }
@@ -132,7 +130,7 @@ type session = {
   mutable next_fileID           : int;
   session_dir                   : string; (** Absolute path *)
   session_files                 : file Hfile.t;
-  mutable session_shape_version : int;
+  session_sum_shape_table       : (Termcode.checksum * Termcode.shape) Hpn.t;
   session_prover_ids            : int Hprover.t;
   (* tasks *)
   session_raw_tasks : Task.task Hpn.t;
@@ -145,7 +143,7 @@ type session = {
 }
 
 let system_path s f =
-  Sysutil.absolutize_path s.session_dir f.file_path
+  Sysutil.system_dependent_absolute_path s.session_dir f.file_path
 
 let theory_parent s th =
   Debug.dprintf debug "[Session_itp.theory_parent] th.parent_name = %d@."
@@ -490,6 +488,7 @@ let print_proof_attempt fmt pa =
 
 let rec print_proof_node s (fmt: Format.formatter) p =
   let pn = get_proofNode s p in
+  let sum,_ = Hpn.find s.session_sum_shape_table p in
   let parent = match pn.proofn_parent with
   | Theory t -> t.theory_name.id_string
   | Trans id -> (get_transfNode s id).transf_name
@@ -497,7 +496,7 @@ let rec print_proof_node s (fmt: Format.formatter) p =
   fprintf fmt
     "@[<hv 1> Goal %s;@ parent %s;@ sum %s;@ @[<hv 1>[%a]@]@ @[<hv 1>[%a]@]@]"
     pn.proofn_name.id_string parent
-    (Termcode.string_of_checksum pn.proofn_checksum)
+    (Termcode.string_of_checksum sum)
     (Pp.print_list Pp.semi print_proof_attempt)
       (Hprover.fold (fun _key e l ->
                      let e = get_proof_attempt_node s e in
@@ -532,10 +531,10 @@ let _print_session fmt s =
 
 
 let empty_session ?from dir =
-  let prover_ids, shape_version =
+  let prover_ids =
     match from with
-    | Some v -> v.session_prover_ids, v.session_shape_version
-    | None -> Hprover.create 7, Termcode.current_shape_version
+    | Some v -> v.session_prover_ids
+    | None -> Hprover.create 7
   in
   { proofAttempt_table = Hint.create 97;
     next_proofAttemptID = 0;
@@ -546,10 +545,10 @@ let empty_session ?from dir =
     next_fileID = 0;
     session_dir = dir;
     session_files = Hfile.create 3;
-    session_shape_version = shape_version;
     session_prover_ids = prover_ids;
     session_raw_tasks = Hpn.create 97;
     session_task_tables = Hpn.create 97;
+    session_sum_shape_table = Hpn.create 97;
     file_state = Hfile.create 3;
     th_state = Ident.Hid.create 7;
     tn_state = Htn.create 97;
@@ -597,41 +596,39 @@ let graft_proof_attempt ?file (s : session) (id : proofNodeID) (pr : Whyconf.pro
 
 (* [mk_proof_node s n t p id] register in the session [s] a proof node
    of proofNodeID [id] of parent [p] of task [t] *)
-let mk_proof_node ~version ~expl (s : session) (n : Ident.ident) (t : Task.task)
+let mk_proof_node ~shape_version ~expl (s : session) (n : Ident.ident) (t : Task.task)
     (parent : proof_parent) (node_id : proofNodeID) =
-  (* let tables = Args_wrapper.build_naming_tables t in *)
-  let sum = Termcode.task_checksum ~version t in
-  let shape = Termcode.t_shape_task ~version ~expl t in
   let pn = { proofn_name = n;
              proofn_expl = expl;
              proofn_parent = parent;
-             proofn_checksum = sum;
-             proofn_shape = shape;
-             proofn_attempts = Hprover.create 7;
-             proofn_transformations = [] } in
-  Hpn.add s.session_raw_tasks node_id t;
-  Hint.add s.proofNode_table node_id pn
-
-let mk_proof_node_no_task (s : session) (n : Ident.ident)
-    (parent : proof_parent) (node_id : proofNodeID) sum shape proved =
-  let pn = { proofn_name = n;
-             proofn_expl = "";
-             proofn_parent = parent;
-             proofn_checksum = sum;
-             proofn_shape = shape;
              proofn_attempts = Hprover.create 7;
              proofn_transformations = [] } in
   Hint.add s.proofNode_table node_id pn;
+  Hpn.add s.session_raw_tasks node_id t;
+  let sum = Termcode.task_checksum ~version:shape_version t in
+  let shape = Termcode.t_shape_task ~version:shape_version ~expl t in
+  Hpn.add s.session_sum_shape_table node_id (sum,shape)
+
+let mk_new_proof_node = mk_proof_node ~shape_version:Termcode.current_shape_version
+
+let mk_proof_node_no_task (s : session) (n : Ident.ident)
+    (parent : proof_parent) (node_id : proofNodeID) sum shape expl proved =
+  let pn = { proofn_name = n;
+             proofn_expl = expl;
+             proofn_parent = parent;
+             proofn_attempts = Hprover.create 7;
+             proofn_transformations = [] } in
+  Hint.add s.proofNode_table node_id pn;
+  Hpn.add s.session_sum_shape_table node_id (sum,shape);
   Hint.add s.pn_state node_id proved
 
-let mk_transf_proof_node (s : session) (parent_name : string)
+let mk_new_transf_proof_node (s : session) (parent_name : string)
     (tid : transID) (index : int) (t : Task.task) =
   let id = gen_proofNodeID s in
   let gid,expl,_ = Termcode.goal_expl_task ~root:false t in
   let goal_name = parent_name ^ "." ^ string_of_int index in
   let goal_name = Ident.id_register (Ident.id_derive goal_name gid) in
-  mk_proof_node ~version:s.session_shape_version ~expl
-                s goal_name t (Trans tid) id;
+  mk_new_proof_node ~expl s goal_name t (Trans tid) id;
   id
 
 let mk_transf_node (s : session) (id : proofNodeID) (node_id : transID)
@@ -654,7 +651,7 @@ let graft_transf  (s : session) (id : proofNodeID) (name : string)
     (args : string list) (tl : Task.task list) =
   let tid = gen_transID s in
   let parent_name = (get_proofNode s id).proofn_name.Ident.id_string in
-  let sub_tasks = List.mapi (mk_transf_proof_node s parent_name tid) tl in
+  let sub_tasks = List.mapi (mk_new_transf_proof_node s parent_name tid) tl in
   let proved = sub_tasks = [] in
   mk_transf_node s id tid name args ~proved sub_tasks ~detached:false;
   tid
@@ -691,24 +688,24 @@ let file_proved s f =
     Hfile.add s.file_state f.file_id b;
     b
 
+let pa_proved s paid =
+  let pa = get_proof_attempt_node s paid in
+  match pa.proof_state with
+  | None -> false
+  | Some pa ->
+     begin
+       match pa.Call_provers.pr_answer with
+       | Call_provers.Valid -> true
+       | _ -> false
+     end
+
 let any_proved s any : bool =
   match any with
   | AFile file -> file_proved s file
   | ATh th -> th_proved s th
   | ATn tn -> tn_proved s tn
   | APn pn -> pn_proved s pn
-  | APa pa ->
-      begin
-        let pa = get_proof_attempt_node s pa in
-        match pa.proof_state with
-        | None -> false
-        | Some pa ->
-          begin
-            match pa.Call_provers.pr_answer with
-            | Call_provers.Valid -> true
-            | _ -> false
-          end
-      end
+  | APa pa -> pa_proved s pa
 
 
 
@@ -951,7 +948,7 @@ let load_result r =
        match status with
        | "valid" -> Call_provers.Valid
        | "invalid" -> Call_provers.Invalid
-       | "unknown" -> Call_provers.Unknown ("", None)
+       | "unknown" -> Call_provers.Unknown ""
        | "timeout" -> Call_provers.Timeout
        | "outofmemory" -> Call_provers.OutOfMemory
        | "failure" -> Call_provers.Failure ""
@@ -991,14 +988,14 @@ let load_option attr g =
 
 let load_ident elt =
   let name = string_attribute "name" elt in
-  let label = List.fold_left
+  let attrs = List.fold_left
       (fun acc label ->
          match label with
          | {Xml.name = "label"} ->
-           let lab = string_attribute "name" label in
-           Ident.Slab.add (Ident.create_label lab) acc
+           let name = string_attribute "name" label in
+           Ident.Sattr.add (Ident.create_attribute name) acc
          | _ -> acc
-      ) Ident.Slab.empty elt.Xml.elements in
+      ) Ident.Sattr.empty elt.Xml.elements in
   let preid =
     try
       let load_exn attr g = List.assoc attr g.Xml.attributes in
@@ -1007,9 +1004,9 @@ let load_ident elt =
       let cnumb = int_of_string (load_exn "loccnumb" elt) in
       let cnume = int_of_string (load_exn "loccnume" elt) in
       let pos = Loc.user_position file lnum cnumb cnume in
-      Ident.id_user ~label name pos
+      Ident.id_user ~attrs name pos
     with Not_found | Invalid_argument _ ->
-      Ident.id_fresh ~label name in
+      Ident.id_fresh ~attrs name in
   Ident.id_register preid
 
 (* [load_goal s op p g id] loads the goal of parent [p] from the xml
@@ -1027,8 +1024,9 @@ let rec load_goal session old_provers parent g id =
       try Termcode.shape_of_string (List.assoc "shape" g.Xml.attributes)
       with Not_found -> Termcode.shape_of_string ""
     in
+    let expl = string_attribute_def "expl" g "" in
     let proved = bool_attribute "proved" g false in
-    mk_proof_node_no_task session gname parent id sum shape proved;
+    mk_proof_node_no_task session gname parent id sum shape expl proved;
     List.iter (load_proof_or_transf session old_provers id) g.Xml.elements;
   | "label" -> ()
   | s ->
@@ -1175,7 +1173,6 @@ let build_session (s : session) xml =
   match xml.Xml.name with
   | "why3session" ->
     let shape_version = int_attribute_def "shape_version" xml 1 in
-    s.session_shape_version <- shape_version;
     Debug.dprintf debug "[Info] load_session: shape version is %d@\n" shape_version;
     (* just to keep the old_provers somewhere *)
     let old_provers =
@@ -1186,10 +1183,12 @@ let build_session (s : session) xml =
          Debug.dprintf debug "prover %d: %a@." id Whyconf.print_prover p;
          Hprover.replace s.session_prover_ids p id)
       old_provers;
-    Debug.dprintf debug "[Info] load_session: done@\n"
+    Debug.dprintf debug "[Info] load_session: done@\n";
+    shape_version
   | s ->
     Warning.emit "[Warning] Session.load_session: unexpected element '%s'@."
-      s
+                 s;
+    Termcode.current_shape_version
 
 exception ShapesFileError of string
 
@@ -1228,7 +1227,7 @@ let read_sum_and_shape ch =
       | Exit -> Bytes.unsafe_to_string sum, Buffer.contents shape
 
 
-  let use_shapes = ref true
+  let has_shapes = ref true
 
   let fix_attributes ch name attrs =
     if name = "goal" then
@@ -1248,16 +1247,16 @@ let read_sum_and_shape ch =
           with Not_found -> ("sum", sum) :: attrs
         in
         ("shape",shape) :: attrs
-      with _ -> use_shapes := false; attrs
+      with _ -> has_shapes := false; attrs
     else attrs
 
 let read_xml_and_shapes xml_fn compressed_fn =
-  use_shapes := true;
+  has_shapes := true;
   try
     let ch = C.open_in compressed_fn in
     let xml = Xml.from_file ~fixattrs:(fix_attributes ch) xml_fn in
     C.close_in ch;
-    xml, !use_shapes
+    xml, !has_shapes
   with Sys_error msg ->
     raise (ShapesFileError ("cannot open shapes file for reading: " ^ msg))
 end
@@ -1296,18 +1295,18 @@ with e ->
 let load_session (dir : string) =
   let session = empty_session dir in
   let file = Filename.concat dir db_filename in
-  let use_shapes =
+  let shape_version =
     (* If the xml is present we read it, otherwise we consider it empty *)
     if Sys.file_exists file then
       try
 (*
         Termcode.reset_dict ();
 *)
-        let xml,use_shapes =
+        let xml,has_shapes =
           read_file_session_and_shapes dir file in
         try
-          build_session session xml.Xml.content;
-          use_shapes
+          let shape_version = build_session session xml.Xml.content in
+          if has_shapes then Some shape_version else None
         with Sys_error msg ->
           failwith ("Open session: sys error " ^ msg)
       with
@@ -1317,9 +1316,9 @@ let load_session (dir : string) =
       | Xml.Parse_error s ->
         Warning.emit "XML database corrupted, ignored (%s)@." s;
         raise (SessionFileError "XML corrupted")
-    else false
+    else None
   in
-    session, use_shapes
+    session, shape_version
 
 (* -------------------- merge/update session --------------------------- *)
 
@@ -1327,8 +1326,8 @@ let load_session (dir : string) =
 
 module Goal = struct
   type 'a t = proofNodeID * session
-  let checksum (id,s) = Some (get_proofNode s id).proofn_checksum
-  let shape (id,s)    = (get_proofNode s id).proofn_shape
+  let checksum (id,s) = Some (fst (Hpn.find s.session_sum_shape_table id))
+  let shape (id,s)    = snd (Hpn.find s.session_sum_shape_table id)
   let name (id,s)     = (get_proofNode s id).proofn_name
 end
 
@@ -1345,15 +1344,16 @@ let save_detached_proof s parent old_pa_n =
                             parent)
 
 let rec save_detached_goal old_s s parent detached_goal_id id =
-    let detached_goal = get_proofNode old_s detached_goal_id in
-    mk_proof_node_no_task s detached_goal.proofn_name parent id detached_goal.proofn_checksum
-      detached_goal.proofn_shape false;
-    Hprover.iter (fun _ pa ->
-                  let pa = get_proof_attempt_node old_s pa in
-                  save_detached_proof s id pa) detached_goal.proofn_attempts;
-    List.iter (save_detached_trans old_s s id) detached_goal.proofn_transformations;
-    let new_trans = (get_proofNode s id) in
-    new_trans.proofn_transformations <- List.rev new_trans.proofn_transformations
+  let detached_goal = get_proofNode old_s detached_goal_id in
+  let (sum,shape) = Hpn.find old_s.session_sum_shape_table detached_goal_id in
+  mk_proof_node_no_task s detached_goal.proofn_name parent id sum shape
+                        detached_goal.proofn_expl false;
+  Hprover.iter (fun _ pa ->
+                let pa = get_proof_attempt_node old_s pa in
+                save_detached_proof s id pa) detached_goal.proofn_attempts;
+  List.iter (save_detached_trans old_s s id) detached_goal.proofn_transformations;
+  let new_trans = (get_proofNode s id) in
+  new_trans.proofn_transformations <- List.rev new_trans.proofn_transformations
 
 
 and save_detached_goals old_s detached_goals_id s parent =
@@ -1379,12 +1379,10 @@ let save_detached_theory parent_name old_s detached_theory s =
   let goalsID =
     save_detached_goals old_s detached_theory.theory_goals s (Theory detached_theory)
   in
-  { theory_name = detached_theory.theory_name;
-    theory_is_detached = true;
-    theory_goals = goalsID;
-    theory_parent_name = parent_name }
-
-
+  assert (detached_theory.theory_parent_name = parent_name);
+  detached_theory.theory_goals <- goalsID;
+  detached_theory.theory_is_detached <- true;
+  detached_theory
 
 let merge_proof new_s ~goal_obsolete new_goal _ old_pa_n =
   let old_pa = old_pa_n in
@@ -1396,11 +1394,18 @@ let merge_proof new_s ~goal_obsolete new_goal _ old_pa_n =
 
 exception NoProgress
 
+let () = Exn_printer.register
+    (fun fmt e ->
+      match e with
+      | NoProgress ->
+          Format.fprintf fmt "The transformation made no progress.\n"
+      | _ -> raise e)
+
 let apply_trans_to_goal ~allow_no_effect s env name args id =
   let task,table = get_task_name_table s id in
   let subtasks = Trans.apply_transform_args name env args table task in
   (* If any generated task is equal to the former task, then we made no
-         progress because we need to prove more lemmas than before *)
+     progress because we need to prove more lemmas than before *)
   match subtasks with
   | [t'] when Task.task_equal t' task && not allow_no_effect ->
      Debug.dprintf debug "[apply_trans_to_goal] apply_transform made no progress@.";
@@ -1427,19 +1432,19 @@ let add_registered_transformation s env old_tr goal_id =
     in
     graft_transf s goal_id old_tr.transf_name old_tr.transf_args subgoals
 
-let rec merge_goal ~use_shapes env new_s old_s ~goal_obsolete old_goal new_goal_id =
+let rec merge_goal ~shape_version env new_s old_s ~goal_obsolete old_goal new_goal_id =
   Hprover.iter (fun k pa ->
                 let pa = get_proof_attempt_node old_s pa in
                 merge_proof new_s ~goal_obsolete new_goal_id k pa)
                old_goal.proofn_attempts;
   List.iter
-    (merge_trans ~use_shapes env old_s new_s new_goal_id)
+    (merge_trans ~shape_version env old_s new_s new_goal_id)
     old_goal.proofn_transformations;
   let new_goal_node = get_proofNode new_s new_goal_id in
   new_goal_node.proofn_transformations <- List.rev new_goal_node.proofn_transformations;
   update_goal_node (fun _ -> ()) new_s new_goal_id
 
-and merge_trans ~use_shapes env old_s new_s new_goal_id old_tr_id =
+and merge_trans ~shape_version env old_s new_s new_goal_id old_tr_id =
   let old_tr = get_transfNode old_s old_tr_id in
   let old_subtasks = List.map (fun id -> id,old_s)
       old_tr.transf_subtasks in
@@ -1455,12 +1460,13 @@ and merge_trans ~use_shapes env old_s new_s new_goal_id old_tr_id =
     let new_subtasks = List.map (fun id -> id,new_s)
                                 new_tr.transf_subtasks in
     let associated,detached =
-      AssoGoals.associate ~use_shapes old_subtasks new_subtasks
+      AssoGoals.associate ~use_shapes:(shape_version <> None)
+                          old_subtasks new_subtasks
     in
     List.iter
       (function
         | ((new_goal_id,_), Some ((old_goal_id,_), goal_obsolete)) ->
-           merge_goal ~use_shapes env new_s old_s ~goal_obsolete
+           merge_goal ~shape_version env new_s old_s ~goal_obsolete
                       (get_proofNode old_s old_goal_id) new_goal_id
         | ((id,s), None) ->
            Debug.dprintf debug "[merge_trans] missed new subgoal: %s@."
@@ -1488,7 +1494,7 @@ and merge_trans ~use_shapes env old_s new_s new_goal_id old_tr_id =
     exit 2
 
 
-let merge_theory ~use_shapes env old_s old_th s th : unit =
+let merge_theory ~shape_version env old_s old_th s th : unit =
   let get_goal_name goal_node =
     let name = goal_node.proofn_name in
     try
@@ -1510,18 +1516,18 @@ let merge_theory ~use_shapes env old_s old_th s th : unit =
          let new_goal = get_proofNode s ng_id in
          (* look for old_goal with matching name *)
          let new_goal_name = get_goal_name new_goal in
-         let old_goal = get_proofNode old_s
-           (Hstr.find old_goals_table new_goal_name) in
+         let old_id = Hstr.find old_goals_table new_goal_name in
+         let old_goal = get_proofNode old_s old_id in
          Hstr.remove old_goals_table new_goal_name;
          let goal_obsolete =
-             let s1 = new_goal.proofn_checksum in
-             let s2 = old_goal.proofn_checksum in
+             let s1 = fst (Hpn.find s.session_sum_shape_table ng_id) in
+             let s2 = fst (Hpn.find old_s.session_sum_shape_table old_id) in
              Debug.dprintf debug "[merge_theory] goal has checksum@.";
              not (Termcode.equal_checksum s1 s2)
          in
          if goal_obsolete then
            found_obsolete := true;
-         merge_goal ~use_shapes env s old_s ~goal_obsolete old_goal ng_id
+         merge_goal ~shape_version env s old_s ~goal_obsolete old_goal ng_id
        with
        | Not_found ->
          (* if no goal of matching name is found store it to look for
@@ -1532,12 +1538,14 @@ let merge_theory ~use_shapes env old_s old_th s th : unit =
   (* attach the session to the subtasks to be able to instantiate Pairing *)
   let detached_goals = Hstr.fold (fun _key g tl -> (g,old_s) :: tl) old_goals_table [] in
   let associated,detached =
-    AssoGoals.associate ~use_shapes detached_goals !new_goals
+    AssoGoals.associate ~use_shapes:(shape_version <> None)
+                        detached_goals !new_goals
   in
   List.iter (function
       | ((new_goal_id,_), Some ((old_goal_id,_), goal_obsolete)) ->
         Debug.dprintf debug "[merge_theory] pairing paired one goal, yeah !@.";
-        merge_goal ~use_shapes env s old_s ~goal_obsolete (get_proofNode old_s old_goal_id) new_goal_id
+        merge_goal ~shape_version env s old_s ~goal_obsolete
+                   (get_proofNode old_s old_goal_id) new_goal_id
       | ((id,_), None) ->
          Debug.dprintf debug "[merge_theory] pairing found missed sub goal: %s@."
                        (get_proofNode s id).proofn_name.Ident.id_string;
@@ -1551,12 +1559,18 @@ let merge_theory ~use_shapes env old_s old_th s th : unit =
    provided in merge try to merge the new theory with the previous one *)
 let make_theory_section ?merge ~detached (s:session) parent_name (th:Theory.theory)
   : theory =
-  let add_goal parent goal id =
-    let name,expl,task = Termcode.goal_expl_task ~root:true goal in
-    mk_proof_node ~version:s.session_shape_version ~expl
-                  s name task parent id;
+  let add_goal =
+    match merge with
+    | Some(_,_,_,Some v) ->
+       fun parent goal id ->
+       let name,expl,task = Termcode.goal_expl_task ~root:true goal in
+       mk_proof_node ~shape_version:v ~expl s name task parent id
+    | _ ->
+       fun parent goal id ->
+       let name,expl,task = Termcode.goal_expl_task ~root:true goal in
+       mk_new_proof_node ~expl s name task parent id
   in
-  let tasks = List.rev (Task.split_theory th None None) in
+  let tasks = Task.split_theory th None None in
   let goalsID = List.map (fun _ -> gen_proofNodeID s) tasks in
   let theory = { theory_name = th.Theory.th_name;
                  theory_is_detached = detached;
@@ -1567,8 +1581,8 @@ let make_theory_section ?merge ~detached (s:session) parent_name (th:Theory.theo
   List.iter2 (add_goal parent) tasks goalsID;
   begin
     match merge with
-    | Some (old_s, old_th, env, use_shapes) ->
-       merge_theory ~use_shapes env old_s old_th s theory
+    | Some (old_s, old_th, env, shape_version) ->
+       merge_theory ~shape_version env old_s old_th s theory
     | _ -> if tasks <> [] then found_detached := true (* should be found_new_goals instead of found_detached *)
   end;
   theory
@@ -1601,7 +1615,7 @@ let add_file_section (s:session) (fn:string) ~file_is_detached
 
 (* add a why file to a session and try to merge its theories with the
    provided ones with matching names *)
-let merge_file_section ~use_shapes ~old_ses ~old_theories ~file_is_detached ~env
+let merge_file_section ~shape_version ~old_ses ~old_theories ~file_is_detached ~env
     (s:session) (fn:string) (theories:Theory.theory list) format
     : unit =
   Debug.dprintf debug_merge "[Session_itp.merge_file_section] fn = %s@." fn;
@@ -1621,7 +1635,7 @@ let merge_file_section ~use_shapes ~old_ses ~old_theories ~file_is_detached ~env
         Debug.dprintf debug_merge "[Session_itp.merge_file_section] theory found: %s@." theory_name;
         Hstr.remove old_th_table theory_name;
         make_theory_section ~detached:false
-                            ~merge:(old_ses,old_th,env,use_shapes) s fid th
+                            ~merge:(old_ses,old_th,env,shape_version) s fid th
       with Not_found ->
         (* if no theory was found we make a new theory section *)
         Debug.dprintf debug_merge "[Session_itp.merge_file_section] theory NOT FOUND in old session: %s@." theory_name;
@@ -1635,7 +1649,7 @@ let merge_file_section ~use_shapes ~old_ses ~old_theories ~file_is_detached ~env
                      old_th_table [] in
     theories, List.rev detached
   in
-  f.file_theories <- theories (*@ detached*);
+  f.file_theories <- theories @ detached;
   update_file_node (fun _ -> ()) s f
 
 let read_file env ?format fn =
@@ -1657,33 +1671,58 @@ let read_file env ?format fn =
   in
   List.map (fun (_,_,a) -> a) th
 
-let merge_file  ~use_shapes env (ses : session) (old_ses : session) file =
+let merge_file  ~shape_version env (ses : session) (old_ses : session) file =
   let format = file_format file in
   let old_theories = file_theories file in
-  let file_name = Sysutil.absolutize_path (get_dir old_ses) (file_path file) in
+  let file_name = Sysutil.system_dependent_absolute_path (get_dir old_ses) (file_path file) in
   Debug.dprintf debug "merging file %s@." file_name;
   try
     let new_theories = read_file env file_name ?format in
     merge_file_section
-      ses ~use_shapes ~old_ses ~old_theories ~file_is_detached:false
+      ses ~shape_version ~old_ses ~old_theories ~file_is_detached:false
       ~env file_name new_theories format;
     None
   with e -> (* TODO: capture only parsing and typing errors *)
     merge_file_section
-      ses ~use_shapes ~old_ses ~old_theories ~file_is_detached:true
+      ses ~shape_version ~old_ses ~old_theories ~file_is_detached:true
       ~env file_name [] format;
     Some e
 
-let merge_files ~use_shapes env (ses:session)  (old_ses : session) =
+let merge_files ~shape_version env (ses:session)  (old_ses : session) =
   Debug.dprintf debug "merging files from old session@.";
   let errors =
     Hfile.fold
       (fun _ f acc ->
-       match merge_file ~use_shapes env ses old_ses f with
+       match merge_file ~shape_version env ses old_ses f with
        | None -> acc
        | Some e -> e :: acc)
       (get_files old_ses) []
   in
+  (* recompute shapes if absent or obsolete *)
+  if shape_version <> Some Termcode.current_shape_version then
+    begin
+      Hpn.clear ses.session_sum_shape_table;
+      let version = Termcode.current_shape_version in
+      fold_all_session
+        ses
+        (fun () n ->
+         match n with
+         | APn id ->
+            let sum,shape =
+              try
+                let t = get_task ses id in
+                let _,expl,_ = Termcode.goal_expl_task ~root:false t in
+                let sum = Termcode.task_checksum ~version t in
+                let shape = Termcode.t_shape_task ~version ~expl t in
+                sum, shape
+              with Not_found -> (* detached goal *)
+                Termcode.dumb_checksum, Termcode.shape_of_string ""
+            in
+            Hpn.add ses.session_sum_shape_table id (sum,shape)
+         | _ -> ()
+        )
+        ()
+    end;
   (errors,!found_obsolete,!found_detached)
 
 
@@ -1692,9 +1731,6 @@ let merge_files ~use_shapes env (ses:session)  (old_ses : session) =
 (************************)
 
 module Mprover = Whyconf.Mprover
-(* dead code
-module Sprover = Whyconf.Sprover
-*)
 module PHprover = Whyconf.Hprover
 
 open Format
@@ -1793,7 +1829,7 @@ let save_prover fmt id (p,mostfrequent_timelimit,mostfrequent_steplimit,mostfreq
     mostfrequent_memlimit
 
 let save_string_attrib name fmt s =
-  if s <> "" then fprintf fmt "@ %s=\"%s\"" name s
+  if s <> "" then fprintf fmt "@ %s=\"%a\"" name save_string s
 
 let save_option_def name fmt opt =
   match opt with
@@ -1858,11 +1894,10 @@ let rec save_goal s ctxt fmt pnid =
     save_ident pn.proofn_name
     (save_string_attrib "expl") pn.proofn_expl
     (save_bool_def "proved" false) (pn_proved s pnid);
-  let sum = Termcode.string_of_checksum pn.proofn_checksum in
-  let shape = Termcode.string_of_shape pn.proofn_shape in
-  Compress.Compress_z.output_string ctxt.ch_shapes sum;
+  let (sum,shape) = Hpn.find s.session_sum_shape_table pnid in
+  Compress.Compress_z.output_string ctxt.ch_shapes (Termcode.string_of_checksum sum);
   Compress.Compress_z.output_char ctxt.ch_shapes ' ';
-  Compress.Compress_z.output_string ctxt.ch_shapes shape;
+  Compress.Compress_z.output_string ctxt.ch_shapes (Termcode.string_of_shape shape);
   Compress.Compress_z.output_char ctxt.ch_shapes '\n';
   let l = Hprover.fold
       (fun _ a acc ->
@@ -1907,7 +1942,7 @@ let save_theory s ctxt fmt t =
 
 let save_file s ctxt fmt _ f =
   fprintf fmt
-    "@\n@[<v 0>@[<h><file@ %a%a>@]"
+    "@\n@[<v 0>@[<h><file%a%a>@]"
     (opt_string "format") f.file_format
     (save_bool_def "proved" false) (file_proved s f);
   List.iter (fun s -> fprintf fmt "@\n@[<hov 1><path@ name=\"%s\"/>@]" s) f.file_path;
@@ -1921,10 +1956,7 @@ let save fname shfname session =
   fprintf fmt "<?xml version=\"1.0\" encoding=\"UTF-8\"?>@\n";
   fprintf fmt "<!DOCTYPE why3session PUBLIC \"-//Why3//proof session v5//EN\"@ \"http://why3.lri.fr/why3session.dtd\">@\n";
   fprintf fmt "@[<v 0><why3session shape_version=\"%d\">"
-    session.session_shape_version;
-(*
-  Termcode.reset_dict ();
-*)
+    Termcode.current_shape_version;
   let prover_ids = session.session_prover_ids in
   let provers =
     PHprover.fold (get_prover_to_save prover_ids)

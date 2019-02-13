@@ -26,7 +26,7 @@ let autoprovers = ref false
 let autoplugins = ref false
 let resetloadpath = ref false
 
-let opt_list_prover_ids = ref false
+let opt_list_prover_families = ref false
 
 let save = ref true
 
@@ -54,10 +54,12 @@ let option_list = Arg.align [
   " search for both provers and plugins, and resets the default loadpath";
   "--add-prover", Arg.Tuple
     (let id = ref "" in
+     let shortcut = ref "" in
      [Arg.Set_string id;
-      Arg.String (fun name -> Queue.add (!id, name) prover_bins)]),
-  "<id><file> add a new prover executable";
-  "--list-prover-ids", Arg.Set opt_list_prover_ids,
+      Arg.Set_string shortcut;
+      Arg.String (fun name -> Queue.add (!id, !shortcut, name) prover_bins)]),
+  "<id> <shortcut> <file> add a new prover executable";
+  "--list-prover-families", Arg.Set opt_list_prover_families,
   " list known prover families";
   "--install-plugin", Arg.String add_plugin,
   "<file> install a plugin to the actual libdir";
@@ -70,20 +72,20 @@ let option_list = Arg.align [
 
 let anon_file _ = Arg.usage option_list usage_msg; exit 1
 
-let add_prover_binary config (id,file) =
-  Autodetection.add_prover_binary config id file
+let add_prover_binary config (id,shortcut,file) =
+  Autodetection.add_prover_binary config id shortcut file
 
 let install_plugin main p =
   begin match Plugin.check_plugin p with
     | Plugin.Plubad ->
-        Debug.dprintf Plugin.debug "Unknown extension (.cmo|.cmxs) : %s@." p;
+        Debug.dprintf Plugin.debug "Unknown extension (.cmo|.cmxs): %s@." p;
         raise Exit
     | Plugin.Pluother ->
         Debug.dprintf Plugin.debug
           "The plugin %s cannot be used with this kind of compilation@." p;
         raise Exit
     | Plugin.Plufail exn ->
-        eprintf "The plugin %s dynlink failed :@.%a@."
+        eprintf "The plugin %s dynlink failed:@.%a@."
           p Exn_printer.exn_printer exn;
         raise Exit
     | Plugin.Plugood ->
@@ -127,11 +129,11 @@ let main () =
   (* Debug flag *)
   Debug.Args.set_flags_selected ();
 
-  if !opt_list_prover_ids then begin
+  if !opt_list_prover_families then begin
     opt_list := true;
     printf "@[<hov 2>Known prover families:@\n%a@]@\n@."
       (Pp.print_list Pp.newline Pp.string)
-      (List.sort String.compare (Autodetection.list_prover_ids ()))
+      (List.sort String.compare (Autodetection.list_prover_families ()))
   end;
 
   opt_list :=  Debug.Args.option_list () || !opt_list;

@@ -13,7 +13,13 @@
 open Why3
 open Itp_communication
 
-module JSU = Js.Unsafe
+module Js = Js_of_ocaml.Js
+module JSU = Js_of_ocaml.Js.Unsafe
+module Dom = Js_of_ocaml.Dom
+module Form = Js_of_ocaml.Form
+module Firebug = Js_of_ocaml.Firebug
+module Dom_html = Js_of_ocaml.Dom_html
+module XmlHttpRequest = Js_of_ocaml.XmlHttpRequest
 
 let log s = ignore (Firebug.console ## log (Js.string s))
 
@@ -503,13 +509,13 @@ let update_status st id =
     let span_msg = getElement AsHtml.span (id ^ "_msg") in
     let cls =
       match st with
-      | `Scheduled -> "fa fa-fw fa-cog why3-task-pending"
-      | `Running -> "fa fa-fw fa-cog fa-spin why3-task-pending"
+      | `Scheduled -> "fas fa-fw fa-cog why3-task-pending"
+      | `Running -> "fas fa-fw fa-cog fa-spin why3-task-pending"
       | `Valid -> span_msg ##. innerHTML := Js.string "";
-	  "fa-check-circle why3-task-valid"
-      | `Unknown -> "fa-question-circle why3-task-unknown"
-      | `Timeout -> "fa-clock-o why3-task-unknown"
-      | `Failure -> "fa-bomb why3-task-unknown"
+	  "fas fa-check-circle why3-task-valid"
+      | `Unknown -> "fas fa-question-circle why3-task-unknown"
+      | `Timeout -> "fas fa-clock-o why3-task-unknown"
+      | `Failure -> "fas fa-bomb why3-task-unknown"
     in
     span_icon ##. className := Js.string cls
   with
@@ -559,13 +565,15 @@ let interpNotif (n: notification) =
       TaskList.remove_node (string_of_int nid)
   | Saved ->
       PE.error_print_msg "Saved"
+  | Saving_needed _b ->
+      PE.error_print_msg "Saving_needed"
   | Message m ->
     begin
       match m with
       | Proof_error (_nid, s) ->
         PE.error_print_msg
           (Format.asprintf "Proof error on selected node: \"%s\"" s)
-      | Transf_error (_ids, _tr, _args, _loc, s, _d) ->
+      | Transf_error (_b, _ids, _tr, _args, _loc, s, _d) ->
         PE.error_print_msg
           (Format.asprintf "Transformation error on selected node: \"%s\"" s)
       | Strat_error (_nid, s) ->

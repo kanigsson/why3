@@ -11,45 +11,61 @@
 
 (** Identifiers *)
 
-(** {2 Labels} *)
+(** {2 Attributes} *)
 
-type label = private {
-  lab_string : string;
-  lab_tag    : int;
+type attribute = private {
+  attr_string : string;
+  attr_tag    : int;
 }
 
-module Mlab : Extmap.S with type key = label
-module Slab : Extset.S with module M = Mlab
+module Mattr : Extmap.S with type key = attribute
+module Sattr : Extset.S with module M = Mattr
 
-val lab_compare : label -> label -> int
-val lab_equal : label -> label -> bool
-val lab_hash : label -> int
+val attr_compare : attribute -> attribute -> int
+val attr_equal : attribute -> attribute -> bool
+val attr_hash : attribute -> int
 
-val create_label : string -> label
+val create_attribute : string -> attribute
 
-val list_label: unit -> string list
+val list_attributes : unit -> string list
 
-(** {2 Naming convention } *)
+(** {2 Naming convention} *)
 
-val infix: string -> string
-(** Apply the naming convention for infix operator (+) *)
+type notation =
+  | SNword   of string  (* plus *)
+  | SNinfix  of string  (* + *)
+  | SNtight  of string  (* ! *)
+  | SNprefix of string  (* -_ *)
+  | SNget    of string  (* [] *)
+  | SNset    of string  (* []<- *)
+  | SNupdate of string  (* [<-] *)
+  | SNcut    of string  (* [..] *)
+  | SNlcut   of string  (* [.._] *)
+  | SNrcut   of string  (* [_..] *)
 
-val prefix: string -> string
-(** Apply the naming convention for prefix operator *)
+val op_infix  : string -> string
+val op_tight  : string -> string
+val op_prefix : string -> string
+val op_get    : string -> string
+val op_set    : string -> string
+val op_update : string -> string
+val op_cut    : string -> string
+val op_lcut   : string -> string
+val op_rcut   : string -> string
+val op_equ    : string
+val op_neq    : string
 
-val mixfix: string -> string
-(** Apply the naming convention for mixfix operator *)
+val sn_decode : string -> notation
+(* decode the string as a symbol name *)
 
-val kind_of_fix: string -> [ `None
-                           | `Prefix of string
-                           | `Infix  of string
-                           | `Mixfix of string ]
+val print_decoded : Format.formatter -> string -> unit
+(* decode the string as a symbol name and pretty-print it *)
 
 (** {2 Identifiers} *)
 
 type ident = private {
   id_string : string;               (** non-unique name *)
-  id_label  : Slab.t;               (** identifier labels *)
+  id_attrs  : Sattr.t;              (** identifier attributes *)
   id_loc    : Loc.position option;  (** optional location *)
   id_tag    : Weakhtbl.tag;         (** unique magical tag *)
 }
@@ -66,7 +82,7 @@ val id_hash : ident -> int
 (** a user-created type of unregistered identifiers *)
 type preid = {
   pre_name  : string;
-  pre_label : Slab.t;
+  pre_attrs : Sattr.t;
   pre_loc   : Loc.position option;
 }
 
@@ -74,19 +90,19 @@ type preid = {
 val id_register : preid -> ident
 
 (** create a fresh pre-ident *)
-val id_fresh : ?label:Slab.t -> ?loc:Loc.position -> string -> preid
+val id_fresh : ?attrs:Sattr.t -> ?loc:Loc.position -> string -> preid
 
 (** create a localized pre-ident *)
-val id_user : ?label:Slab.t -> string -> Loc.position -> preid
+val id_user : ?attrs:Sattr.t -> string -> Loc.position -> preid
 
-(** create a duplicate pre-ident with given labels *)
-val id_lab : Slab.t -> ident -> preid
+(** create a duplicate pre-ident with given attributes *)
+val id_attr : ident -> Sattr.t -> preid
 
 (** create a duplicate pre-ident *)
-val id_clone : ?label:Slab.t -> ident -> preid
+val id_clone : ?attrs:Sattr.t -> ident -> preid
 
-(** create a derived pre-ident (inherit labels and location) *)
-val id_derive : ?label:Slab.t -> string -> ident -> preid
+(** create a derived pre-ident (inherit attributes and location) *)
+val id_derive : ?attrs:Sattr.t -> string -> ident -> preid
 
 (* DEPRECATED : retrieve preid name without registering *)
 val preid_name : preid -> string
@@ -98,6 +114,13 @@ type ident_printer
 val create_ident_printer :
   ?sanitizer : (string -> string) -> string list -> ident_printer
 (** start a new printer with a sanitizing function and a blacklist *)
+
+val duplicate_ident_printer: ident_printer -> ident_printer
+(** This is used to avoid editing the current (mutable) printer when raising
+    exception or printing information messages for the user.
+    This should be avoided for any other usage including display of the whole
+    task.
+*)
 
 val id_unique :
   ident_printer -> ?sanitizer : (string -> string) -> ident -> string
@@ -136,53 +159,76 @@ val char_to_lalnumus : char -> string
 
 (** {2 Name handling for ITP} *)
 
-val id_unique_label :
+(* TODO: integrate this functionality into id_unique *)
+val id_unique_attr :
   ident_printer -> ?sanitizer : (string -> string) -> ident -> string
-(** Do the same as id_unique except that it tries first to
-   use the "name:" label to generate the name instead of id.id_string *)
+(** Do the same as id_unique except that it tries first to use
+    the "name:" attribute to generate the name instead of id.id_string *)
 
+val proxy_attr: attribute
 
+(** {2 Attributes for handling counterexamples} *)
 
-(** {2 labels for handling counterexamples} *)
+val model_projected_attr : attribute
+val model_vc_post_attr : attribute
 
-val model_projected_label: label
-val model_vc_label : label
-val model_vc_post_label : label
+val has_a_model_attr : ident -> bool
+(** [true] when [ident] has one of the attributes above *)
 
-val has_a_model_label : ident -> bool
-(** [true] when [ident] has one of the labels above. *)
+val relevant_for_counterexample: ident -> bool
+(** [true] when [ident] is a constant value that should be used for
+    counterexamples generation.
+*)
 
-val remove_model_labels : labels : Slab.t -> Slab.t
-(** Returns a copy of labels without [model_label] and [model_projected_label]. *)
+val create_written_attr: Loc.position -> attribute
+(** The vc_written attribute is built during VC generation: it is used to
+    track the location of the creation of variables. Those variables can have
+    several creation locations with SP algorithm. These attribute-locations are
+    used by counterexamples.
+    The form is the following:
+    "vc:written:line:start_column:end_column:file_name"
+    file_name is at the end for easier parsing (file_name can contain ":")
+*)
 
-val create_model_trace_label : string -> label
+val extract_written_loc: attribute -> Loc.position option
+(** Extract the location inside vc_written attribute. [None] if the attribute is
+    ill-formed.
+*)
 
-val is_model_trace_label : label -> bool
+val remove_model_attrs : attrs:Sattr.t -> Sattr.t
+(** Remove the counter-example attributes from an attribute set *)
 
-val append_to_model_trace_label : labels : Slab.t ->
-  to_append : string ->
-  Slab.t
-(** The returned set of labels will contain the same set of labels
-    as argument labels except that a label of the form ["model_trace:*"]
+val create_model_trace_attr : string -> attribute
+
+val is_model_trace_attr : attribute -> bool
+
+val append_to_model_trace_attr : attrs:Sattr.t -> to_append:string -> Sattr.t
+(** The returned set of attributes will contain the same set of attributes
+    as argument attrs except that an attribute of the form ["model_trace:*"]
     will be ["model_trace:*to_append"]. *)
 
-val append_to_model_element_name : labels : Slab.t ->
-  to_append : string ->
-  Slab.t
-(** The returned set of labels will contain the same set of labels
-    as argument labels except that a label of the form ["model_trace:*@*"]
+val append_to_model_element_name : attrs:Sattr.t -> to_append:string -> Sattr.t
+(** The returned set of attributes will contain the same set of attributes
+    as argument attrs except that an attribute of the form ["model_trace:*@*"]
     will be ["model_trace:*to_append@*"]. *)
 
-val get_model_element_name : labels : Slab.t -> string
-(** If labels contain a label of the form ["model_trace:name@*"],
-    return ["name"].
-    Throws [Not_found] if there is no label of the form ["model_trace:*"]. *)
+val get_model_element_name : attrs:Sattr.t -> string
+(** If attributes contain an attribute of the form ["model_trace:name@*"],
+    return ["name"]. Raises [Not_found] if there is no attribute of
+    the form ["model_trace:*"]. *)
 
-val get_model_trace_string : labels : Slab.t -> string
-(** If labels contain a label of the form ["model_trace:mt_string"],
-    return ["mt_string"].
-    Throws [Not_found] if there is no label of the form ["model_trace:*"]. *)
+val get_model_trace_string : name:string -> attrs:Sattr.t -> string
+(** If attrs contain an attribute of the form ["model_trace:mt_string"],
+    return ["mt_string"]. Raises [Not_found] if there is no attribute of
+    the form ["model_trace:*"]. *)
 
-val get_model_trace_label : labels : Slab.t -> Slab.elt
-(** Return a label of the form ["model_trace:*"].
-    Throws [Not_found] if there is no such label. *)
+val compute_model_trace_field: ident option -> int -> Sattr.t
+(** Take an optional projection name and the depths of its occurence and return
+    the built field attribute associated *)
+
+val extract_field: attribute -> (int * string) option
+(** Take an attribute and extract its depth, name if it was a field attribute *)
+
+val get_model_trace_attr : attrs:Sattr.t -> attribute
+(** Return an attribute of the form ["model_trace:*"].
+    Raises [Not_found] if there is no such attribute. *)

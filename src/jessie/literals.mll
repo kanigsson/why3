@@ -24,7 +24,7 @@
 
 {
 
-  open Why3 
+  open Why3
 
 (*
   let int_of_digit chr =
@@ -71,7 +71,7 @@ rule integer_literal = parse
       }
 *)
   | eof { invalid_arg "integer_literal: empty string" }
-  | _ as c  { invalid_arg ("integer_literal: character '" ^ 
+  | _ as c  { invalid_arg ("integer_literal: character '" ^
                               String.make 1 c ^ "'") }
 
 (* floating-point literals, both decimal and hexadecimal *)
@@ -92,12 +92,12 @@ and floating_point_literal = parse
       { Number.real_const_hex i f (Some e) }
 
   | eof { invalid_arg "floating_point_literal: empty string" }
-  | _ as c  { invalid_arg ("floating_point_literal: character '" ^ 
+  | _ as c  { invalid_arg ("floating_point_literal: character '" ^
                               String.make 1 c ^ "'") }
 
 
-(* TODO ? 
-and string_literal = parse 
+(* TODO ?
+and string_literal = parse
   | 'L'? '"' as prelude (([^ '\\' '"' '\n']|("\\"[^ '\n']))* as content) '"'
       { STRING_LITERAL (prelude.[0] = 'L',content) }
 *)
@@ -153,10 +153,10 @@ and chr buffer = parse
 
 {
 
-let integer s = 
+let integer s =
   let b = Lexing.from_string s in integer_literal b
 
-let floating_point s = 
+let floating_point s =
   let b = Lexing.from_string s in floating_point_literal b
 
 

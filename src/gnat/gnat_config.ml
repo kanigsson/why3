@@ -78,6 +78,21 @@ let debug_no_auto_model =
 
 let () = Debug.set_flag debug_no_auto_model
 
+(* Set the vc_sp (fast_wp) everywhere.
+TODO we may want to do something more clever in the future. *)
+let debug_sp = Debug.register_flag "vc_sp"
+  ~desc:"Use@ 'Efficient@ Weakest@ Preconditions'@ for@ verification."
+let () = Debug.set_flag debug_sp
+
+(* TODO we may want to revert this at some point *)
+let debug_useless_at = Debug.register_flag "ignore_useless_at"
+  ~desc:"Remove@ warning@ for@ useless@ at/old."
+let () = Debug.set_flag debug_useless_at
+
+
+(* Disable warnings for unused variables *)
+let () = Debug.set_flag Dterm.debug_ignore_unused_var
+
 let set_why3_conf s =
   if s != "" then
     opt_why3_conf_file := Some s
@@ -207,10 +222,7 @@ let show_config () =
   Format.printf "enable_ide: %s@." Config.enable_ide;
   Format.printf "enable_zarith: %s@." Config.enable_zarith;
   Format.printf "enable_zip: %s@." Config.enable_zip;
-  Format.printf "enable_menhirLib: %s@." Config.enable_menhirLib;
-  Format.printf "enable_coq_tactic: %s@." Config.enable_coq_tactic;
   Format.printf "enable_coq_libs: %s@." Config.enable_coq_libs;
-  Format.printf "enable_coq_support: %s@." Config.enable_coq_support;
   Format.printf "enable_coq_fp_libs: %s@." Config.enable_coq_fp_libs;
   Format.printf "enable_pvs_libs: %s@." Config.enable_pvs_libs;
   Format.printf "enable_isabelle_libs: %s@." Config.enable_isabelle_libs;
@@ -730,7 +742,7 @@ let limit_region = !opt_limit_region
 let limit_subp =
    match !opt_limit_subp with
    | None -> None
-   | Some s -> Some (Ident.create_label ("GP_Subp:" ^ s))
+   | Some s -> Some (Ident.create_attribute ("GP_Subp:" ^ s))
 
 let parallel = !opt_parallel
 
@@ -749,7 +761,7 @@ let proof_dir = !opt_proof_dir
 (* when not doing proof, stop after typing to avoid cost of the WP *)
 let () =
   if proof_mode = No_WP then Debug.set_flag Typing.debug_type_only;
-  Debug.set_flag (Debug.lookup_flag "fast_wp");
+(*  Debug.set_flag (Debug.lookup_flag "fast_wp");*)
   let curdir = Sys.getcwd () in
   Unix.putenv "TEMP" curdir;
   Unix.putenv "TEMPDIR" curdir

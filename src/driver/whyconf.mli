@@ -177,6 +177,7 @@ type prover_upgrade_policy =
   | CPU_keep
   | CPU_upgrade of prover
   | CPU_duplicate of prover
+  | CPU_remove
 
 val print_prover_upgrade_policy : Format.formatter -> prover_upgrade_policy -> unit
 
@@ -247,7 +248,6 @@ val why3_regexp_of_string : string -> Str.regexp
 
 (** {2 For accesing other parts of the configuration } *)
 
-(** Access to the Rc.t *)
 val get_section : config -> string -> Rc.section option
 (** [get_section config name] Same as {!Rc.get_section} except name
     must not be "main" *)
@@ -272,7 +272,10 @@ module Args : sig
     (string -> unit) -> string ->
     config * config * Env.env
 
-  val exit_with_usage : (string * Arg.spec * string) list -> string -> 'a
+  val exit_with_usage :
+    ?exit_code : int ->
+    ?extra_help : (Format.formatter -> unit -> unit) ->
+    (string * Arg.spec * string) list -> string -> 'a
 
 end
 

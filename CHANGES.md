@@ -1,5 +1,176 @@
 :x: marks a potential source of incompatibility
 
+Session
+  * file path stored in session files are now represented in an
+    system-independent way, so as to work for example under exotic OS
+    like MS-windows
+
+Drivers
+  * the clause `syntax converter` disappeared. Any former use should
+    be replaced by `syntax literal` and/or `syntax function`
+
+Language
+  * the `any` expression is now always ghost
+  * A syntactic sugar called "auto-dereference" is introduced, so as
+    to avoid, on simple programs, the heavy use of `(!)` character on
+    references. See details in Section A.1 of the manual.
+
+Transformations
+  * `split_vc` and `subst_all` now avoid substituting user symbols by
+    generated ones :x:
+  * `destruct_rec` applies `destruct` recursively on a goal
+  * `destruct` now simplifies away equalities on constructors
+  * `destruct_alg` renamed to `destruct_term`. It also has a new experimental
+    keyword `using` to name newly destructed elements
+
+Tools
+  * added a command `why3 session update` to modify sessions from the
+    command line; so far, only option `-rename-file` exists, for
+    renaming files
+  * `why3 config --add-prover` now takes the shortcut as second
+    argument; option `--list-prover-ids` has been renamed to
+    `--list-prover-families` :x:
+
+IDE
+  * clicking on the status of a failed proof attempt in the proof tree
+    now generates counterexamples
+  * added support for GTK3
+
+Counterexamples
+  * Field names now use ident names instead of smt generated ones:
+    int32qtint -> int32'int
+  * Fix parsing of bitvector counterexamples orignated from Z3
+
+Provers
+  * support for Z3 4.8.1 (released Oct 16, 2018)
+  * support for Z3 4.8.3 (released Nov 20, 2018)
+  * support for Z3 4.8.4 (released Dec 20, 2018)
+
+Version 1.1.1, December 17, 2018
+--------------------------------
+
+Bug fixes
+  * prevented broken extraction of `any`
+  * fixed evaluation order when extracting nested mutators
+  * fixed extraction of nested recursive polymorphic functions
+  * fixed cloning of expressions raising exceptions
+
+Version 1.1.0, October 17, 2018
+-------------------------------
+
+Core
+  * variants can now be inferred on some lemma functions
+  * coercions are now supported for `if` and `match` branches
+  * `interrupt` command should now properly interrupt running provers.
+  * clearer typing error messages thanks to printing qualified names
+  * fixed handling of prover upgrades, resurrected the policy
+    "duplicate" and added a policy "remove"
+
+API
+  * added `Call_provers.interrupt_call` to interrupt a running prover
+    (contribution by Pierre-Yves Strub)
+
+Language
+  * program functions can now be marked `partial` to prevent them from
+    being used in ghost context; the annotation does not have to be
+    explicitly put on their callers
+  * `use` now accepts several module names separated by commas
+  * symbolic operators can be used in identifiers like `(+)_ident` or
+    `([])'ident`
+  * range types have now a default ordering to be used in `variant` clause
+
+Standard library
+  * library `ieee_float`: floating-point operations can now be used in
+    programs
+
+Transformations
+  * `split_vc` behaves slightly differently :x:
+
+Provers
+  * support for Alt-Ergo 2.1.0 (released Mar 14, 2018)
+  * support for Alt-Ergo 2.2.0 (released Apr 26, 2018)
+  * support for Coq 8.8.1 (released Jun 29, 2018)
+  * support for Coq 8.8.2 (released Sep 26, 2018)
+  * support for CVC4 1.6 (released Jun 25, 2018)
+  * support for Z3 4.7.1 (released May 23, 2018)
+  * support for Isabelle 2018 (released Aug 2018)
+    (contribution by Stefan Berghofer)
+  * dropped support for Isabelle 2016 (2017 still supported) :x:
+  * dropped support for Alt-Ergo versions < 2.0.0 :x:
+
+Version 1.0.0, June 25, 2018
+----------------------------
+
+Core
+  * improved support of counter-examples
+  * attribute `[@vc:sp]` on an expression switches from traditional WP
+    to Flanagan-Saxe-like VC generation
+  * type invariants now produce logical axioms;
+    a type with an invariant must be proved to be inhabited :x:
+  * logical symbols can no longer be used in non-ghost code;
+    in particular, there is no polymorphic equality in programs any more,
+    so equality functions must be declared/defined on a per-type basis
+    (already done for type `int` in the standard library) :x:
+
+Language
+  * numerous changes to syntax, see documentation appendix :x:
+  * `let function`, `let predicate`, `val function`, and `val predicate`
+    introduce symbols in both logic and programs
+  * added overloading of program symbols
+  * new contract clause `alias { <term> with <term>, ... }` :x:
+  * support for parallel assignment `<term>,... <- <term>,...`
+  * support for local exceptions using `exception ... in ...`
+  * added `break`, `continue`, and `return` statements
+  * support for `exception` branches in `match` constructs
+  * support for `for` loops on range types
+    (including machine integers from the standard library)
+  * support for type coercions in logic using `meta coercion`
+  * keyword `theory` is deprecated; use `module` instead
+  * term on the left of sequence `;` must be of type `unit` :x:
+  * cloned axioms turn into lemmas; use `with axiom my_axiom`
+    or `with axiom .` to keep them as axioms :x:
+  * `any <type> <spec>` produces an existential precondition;
+    use `val f : <type> <spec> in ...` (unsafe!) instead :x:
+  * `use T` and `clone T` now import the generated namespace T;
+    use `use T as T` and `clone T as T` to prevent this :x:
+  * `pure { <term> }` produces a ghost value in program code
+  * `a <-> b <-> c` is now parsed as `(a <-> b) /\ (b <-> c)`;
+    `a <-> b -> c` is now rejected :x:
+
+Standard library
+  * machine integers in `mach.int.*` are now range types :x:
+  * added a minimal memory model for the C language in `mach.c`
+  * new modules `witness.Witness` and `witness.Nat`
+
+Extraction
+  * improved extraction to OCaml
+  * added partial extraction to C using the memory model of `mach.c`
+  * added extraction to CakeML (using `why3 extract -D cakeml ...`)
+
+Transformations
+  * transformations can now have arguments
+  * added transformations `assert`, `apply`, `cut`, `rewrite`, etc., à la Coq
+  * added transformations for reflection-based proofs
+
+Drivers
+  * support for `use` in theory drivers
+
+IDE
+  * replaced left toolbar by a contextual menu
+  * source is now editable
+  * premises are no longer implicitly introduced
+  * added textual interface to call transformations and provers
+
+Tools
+  * deprecated `.why` file extension; use `.mlw` instead
+
+Provers
+  * removed the `why3` Coq tactic :x:
+  * dropped support for Coq 8.4 :x:
+
+Miscellaneous
+  * moved the opam base package to `why3`; added `why3-ide` and `why3-coq`
+
 Version 0.88.3, January 11, 2018
 --------------------------------
 
@@ -66,12 +237,15 @@ User features
     floating-point values, support for Z3 in addition to CVC4.
     More details in the manual, section 6.3.5 "Displaying Counterexamples".
 
+Plugins
+  * new input format for a small subset of Python
+
 Provers
   * support for Isabelle 2017 (released Oct 2017)
-  * discarded support for Isabelle 2016 (2016-1 still supported) :x:
+  * dropped support for Isabelle 2016 (2016-1 still supported) :x:
   * support for Coq 8.6.1 (released Jul 25, 2017)
   * tentative support for Coq 8.7
-  * discarded tactic support for Coq 8.4 (proofs still supported) :x:
+  * dropped tactic support for Coq 8.4 (proofs still supported) :x:
   * support for CVC4 1.5 (released Jul 10, 2017)
   * support for E 2.0 (released Jul 4, 2017)
   * support for E 1.9.1 (release Aug 31, 2016)
@@ -87,7 +261,7 @@ Provers
   * support for Alt-Ergo 1.30 (released Nov 21, 2016)
   * support for Coq 8.6 (released Dec 8, 2016)
   * support for Gappa 1.3 (released Jul 20, 2016)
-  * discarded support for Isabelle 2015 :x:
+  * dropped support for Isabelle 2015 :x:
   * support for Isabelle 2016-1 (released Dec 2016)
   * support for Z3 4.5.0 (released Nov 8, 2016)
 
@@ -137,13 +311,13 @@ Encoding
     format is direct :x:
 
 Provers
-  * discarded support for Alt-Ergo versions older than 0.95.2 :x:
+  * dropped support for Alt-Ergo versions older than 0.95.2 :x:
   * support for Alt-Ergo 1.01 (released Feb 16, 2016) and
     non-free versions 1.10 and 1.20
   * support for Coq 8.4pl6 (released Apr 9, 2015)
   * support for Coq 8.5 (released Jan 21, 2016)
   * support for Gappa 1.2.0 (released May 19, 2015)
-  * discarded support for Isabelle 2014 :x:
+  * dropped support for Isabelle 2014 :x:
   * support for Isabelle 2015 (released May 25, 2015) and
     Isabelle 2016 (released Feb 17, 2016)
   * support for Z3 4.4.0 (released Apr 29, 2015) and
@@ -321,7 +495,7 @@ Provers
   * new version of prover: Coq 8.4pl3
   * new version of prover: Gappa 1.1.0
   * new version of prover: E prover 1.8
-  * Coq 8.3 is no longer supported :x:
+  * dropped support for Coq 8.3 :x:
   * improved support for Isabelle2013-2
   * fixed Coq printer (former Coq proofs may have to be updated, with
     extra qualification of imported symbols) :x:

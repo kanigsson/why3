@@ -34,6 +34,7 @@ type model_value =
  | Boolean of bool
  | Array of model_array
  | Record of model_record
+ | Proj of model_proj
  | Bitvector of string
  | Apply of string * model_value list
  | Unparsed of string
@@ -45,6 +46,8 @@ and model_array = {
   arr_others  : model_value;
   arr_indices : arr_index list;
 }
+and model_proj = (proj_name * model_value)
+and proj_name = string
 and model_record = (field_name * model_value) list
 and field_name = string
 
@@ -92,25 +95,26 @@ type model_element_name = {
     (** The name of the source-code element.  *)
   men_kind   : model_element_kind;
     (** The kind of model element. *)
-  men_labels : Ident.Slab.t;
+  men_attrs : Ident.Sattr.t;
 }
 
 (** Counter-example model elements. Each element represents
     a counter-example for a single source-code element.*)
 type model_element = {
-  me_name     : model_element_name;
+  me_name       : model_element_name;
     (** Information about the name of the model element  *)
-  me_value    : model_value;
+  me_value      : model_value;
     (** Counter-example value for the element. *)
-  me_location : Loc.position option;
+  me_location   : Loc.position option;
     (** Source-code location of the element. *)
-  me_term     : Term.term option;
+  me_term       : Term.term option;
     (** Why term corresponding to the element.  *)
 }
 
 val create_model_element :
-  name     : string ->
-  value    : model_value ->
+  name      : string ->
+  value     : model_value ->
+  attrs     : Ident.Sattr.t ->
   ?location : Loc.position ->
   ?term     : Term.term ->
   unit ->
@@ -122,7 +126,8 @@ val create_model_element :
 
     @param location : source-code location of the element
 
-    @param term : why term corresponding to the element *)
+    @param term : why term corresponding to the element
+*)
 
 (*
 ***************************************************************
@@ -142,7 +147,7 @@ val default_model : model
 
 val print_model :
   ?me_name_trans:(model_element_name -> string) ->
-  print_labels:bool ->
+  print_attrs:bool ->
   Format.formatter ->
   model ->
   unit
@@ -152,54 +157,18 @@ val print_model :
       names. The input is information about model element name. The
       output is the name of the model element that should be displayed.
     @param model the counter-example model to print
-    @param print_labels: when set to true, the name is printed together with the
-    labels associated to the specific ident.
+    @param print_attrs: when set to true, the name is printed together with the
+    attrs associated to the specific ident.
 *)
 
 val print_model_human :
   ?me_name_trans:(model_element_name -> string) ->
   Format.formatter ->
   model ->
-  print_labels:bool ->
+  print_attrs:bool ->
   unit
 (** Same as print_model but is intended to be human readable.
 
-*)
-
-
-val model_to_string :
-  print_labels:bool ->
-  ?me_name_trans:(model_element_name -> string) ->
-  model ->
-  string
-(** See print_model  *)
-
-(* TODO probably deprecated.
-val print_model_vc_term :
-  print_labels:bool ->
-  ?me_name_trans: (model_element_name -> string) ->
-  ?sep: string ->
-  Format.formatter ->
-  model ->
-  unit
-(** Prints counter-example model elements related to term that
-    triggers VC.
-
-    @param sep separator of counter-example model elements
-    @param me_name_trans see print_model
-    @model the counter-example model.
-*)
-
-val model_vc_term_to_string :
-  print_labels:bool ->
-  ?me_name_trans: (model_element_name -> string) ->
-  ?sep: string ->
-  model ->
-  string
-(** Gets string with counter-example model elements related to term that
-    triggers VC.
-    See print_model_vc_term
-*)
 *)
 
 val print_model_json :
@@ -222,7 +191,7 @@ val print_model_json :
       This transformation can be used to store the counterexample information
       related to this term in dedicated JSON field.
     @param model the counter-example model to print.
-    @param print_labels if set to true, add labels associated to the name id to
+    @param print_attrs if set to true, add attrs associated to the name id to
       the counterexample output
 
     The format is the following:
@@ -261,15 +230,8 @@ val print_model_json :
     }
 *)
 
-val model_to_string_json :
-  ?me_name_trans:(model_element_name -> string) ->
-  ?vc_line_trans:(int -> string) ->
-  model ->
-  string
-(** See print_model_json *)
-
 val interleave_with_source :
-  print_labels:bool ->
+  print_attrs:bool ->
   ?start_comment:string ->
   ?end_comment:string ->
   ?me_name_trans:(model_element_name -> string) ->
@@ -329,13 +291,22 @@ type model_parser =  string -> Printer.printer_mapping -> model
 *)
 
 type raw_model_parser =
-  Wstdlib.Sstr.t -> ((string * string) list) Wstdlib.Mstr.t ->
-    string -> model_element list
-(** Parses the input string into model elements. It contains the list of
-    projections and a map associating the name of printed projections to the
-    fields (couple of printed field and model_trace name) that are collected in
-    the task.
+  Ident.ident Wstdlib.Mstr.t -> Ident.ident Wstdlib.Mstr.t -> ((string * string) list) Wstdlib.Mstr.t ->
+    string list -> Ident.Sattr.t Wstdlib.Mstr.t -> string -> model_element list
+(** Parses the input string into model elements.
+    [raw_model_parser: proj->record_map->noarg_cons->s->mel]
+    [proj]: is the list of projections
+    [list_field]: is the list of field function definition
+    [record_map]: is a map associating the name of printed projections to the
+      fields (couple of printed field and model_trace name).
+    [noarg_cons]: List of constructors with no arguments (collected to avoid
+      confusion between variable and constructors)
+    [s]: model
+    [mel]: collected model
  *)
+
+val register_remove_field:
+  (Ident.Sattr.t * model_value -> Ident.Sattr.t * model_value) -> unit
 
 val register_model_parser : desc:Pp.formatted -> string -> raw_model_parser -> unit
 

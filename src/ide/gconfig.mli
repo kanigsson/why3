@@ -19,9 +19,9 @@ type t =
       mutable font_size : int;
       mutable current_tab : int;
       mutable verbose : int;
-      mutable intro_premises : bool;
       mutable show_full_context : bool;
-      mutable show_labels : bool;
+      mutable show_attributes : bool;
+      mutable show_coercions : bool;
       mutable show_locs : bool;
       mutable show_time_limit : bool;
       mutable max_boxes : int;
@@ -112,11 +112,12 @@ val image_failure_obs : GdkPixbuf.pixbuf ref
 (* miscellaneous dialogs *)
 (*************************)
 
-val show_legend_window : unit -> unit
-val show_about_window : unit -> unit
-val preferences : t -> unit
+val show_legend_window : parent:#GWindow.window_skel -> unit -> unit
+val show_about_window : parent:#GWindow.window_skel -> unit -> unit
+val preferences : parent:#GWindow.window_skel -> t -> unit
 
 val uninstalled_prover_dialog :
+  parent:#GWindow.window_skel ->
   callback: (Whyconf.prover -> Whyconf.prover_upgrade_policy -> unit) ->
   t -> Whyconf.prover -> unit
 

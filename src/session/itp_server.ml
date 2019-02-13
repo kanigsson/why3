@@ -77,132 +77,109 @@ let unproven_goals_below_id cont id =
 
 let p s id =
   let _,tables = Session_itp.get_task_name_table s id in
-  let pr = tables.Trans.printer in
-  let apr = tables.Trans.aprinter in
+  (* We use snapshots of printers to avoid registering new values inside it
+     only for exception messages.
+  *)
+  let pr = Ident.duplicate_ident_printer tables.Trans.printer in
+  let apr = Ident.duplicate_ident_printer tables.Trans.aprinter in
   (Pretty.create pr apr pr pr false)
 
-let print_term s id fmt t =
-  let module P = (val (p s id)) in P.print_term fmt t
-
-let print_type s id fmt t =
-  let module P = (val (p s id)) in P.print_ty fmt t
-
-let print_opt_type s id fmt t =
+let print_opt_type ~print_type fmt t =
   match t with
   | None -> Format.fprintf fmt "bool"
-  | Some t -> print_type s id fmt t
-
-let print_ts s id fmt t =
-  let module P = (val (p s id)) in P.print_ts fmt t
-
-let print_ls s id fmt t =
-  let module P = (val (p s id)) in P.print_ls fmt t
-
-let print_tv s id fmt t =
-  let module P = (val (p s id)) in P.print_tv fmt t
-
-let print_vsty s id fmt t =
-  let module P = (val (p s id)) in P.print_vsty fmt t
-
-let print_pr s id fmt t =
-  let module P = (val (p s id)) in P.print_pr fmt t
-
-let print_pat s id fmt t =
-  let module P = (val (p s id)) in P.print_pat fmt t
-
-let print_tdecl s id fmt t =
-  let module P = (val (p s id)) in P.print_tdecl fmt t
+  | Some t -> print_type fmt t
 
 (* Exception reporting *)
 
 (* TODO remove references to id.id_string in this function *)
 let bypass_pretty s id =
+  let module P = (val (p s id)) in
   begin fun fmt exn -> match exn with
   | Ty.TypeMismatch (t1,t2) ->
       fprintf fmt "Type mismatch between %a and %a"
-        (print_type s id) t1 (print_type s id) t2
+        P.print_ty t1 P.print_ty t2
   | Ty.BadTypeArity ({Ty.ts_args = []} as ts, _) ->
-      fprintf fmt "Type symbol %a expects no arguments" (print_ts s id) ts
+      fprintf fmt "Type symbol %a expects no arguments" P.print_ts ts
   | Ty.BadTypeArity (ts, app_arg) ->
       let i = List.length ts.Ty.ts_args in
       fprintf fmt "Type symbol %a expects %i argument%s but is applied to %i"
-        (print_ts s id) ts i (if i = 1 then "" else "s") app_arg
+        P.print_ts ts i (if i = 1 then "" else "s") app_arg
   | Ty.DuplicateTypeVar tv ->
-      fprintf fmt "Type variable %a is used twice" (print_tv s id) tv
+      fprintf fmt "Type variable %a is used twice" P.print_tv tv
   | Ty.UnboundTypeVar tv ->
-      fprintf fmt "Unbound type variable: %a" (print_tv s id) tv
+      fprintf fmt "Unbound type variable: %a" P.print_tv tv
   | Ty.UnexpectedProp ->
       fprintf fmt "Unexpected propositional type"
   | Term.BadArity ({Term.ls_args = []} as ls, _) ->
       fprintf fmt "%s %a expects no arguments"
-        (if ls.Term.ls_value = None then "Predicate" else "Function") (print_ls s id) ls
+        (if ls.Term.ls_value = None then "Predicate" else "Function") P.print_ls ls
   | Term.BadArity (ls, app_arg) ->
       let i = List.length ls.Term.ls_args in
       fprintf fmt "%s %a expects %i argument%s but is applied to %i"
         (if ls.Term.ls_value = None then "Predicate" else "Function")
-        (print_ls s id) ls i (if i = 1 then "" else "s") app_arg
+        P.print_ls ls i (if i = 1 then "" else "s") app_arg
   | Term.EmptyCase ->
       fprintf fmt "Empty match expression"
   | Term.DuplicateVar vs ->
-      fprintf fmt "Variable %a is used twice" (print_vsty s id) vs
+      fprintf fmt "Variable %a is used twice" P.print_vsty vs
   | Term.UncoveredVar vs ->
-      fprintf fmt "Variable %a uncovered in \"or\"-pattern" (print_vsty s id) vs
+      fprintf fmt "Variable %a uncovered in \"or\"-pattern" P.print_vsty vs
   | Term.FunctionSymbolExpected ls ->
-      fprintf fmt "Not a function symbol: %a" (print_ls s id) ls
+      fprintf fmt "Not a function symbol: %a" P.print_ls ls
   | Term.PredicateSymbolExpected ls ->
-      fprintf fmt "Not a predicate symbol: %a" (print_ls s id) ls
+      fprintf fmt "Not a predicate symbol: %a" P.print_ls ls
   | Term.ConstructorExpected ls ->
       fprintf fmt "%s %a is not a constructor"
-        (if ls.Term.ls_value = None then "Predicate" else "Function") (print_ls s id) ls
+        (if ls.Term.ls_value = None then "Predicate" else "Function") P.print_ls ls
   | Term.TermExpected t ->
-      fprintf fmt "Not a term: %a" (print_term s id) t
+      fprintf fmt "Not a term: %a" P.print_term t
   | Term.FmlaExpected t ->
-      fprintf fmt "Not a formula: %a" (print_term s id) t
+      fprintf fmt "Not a formula: %a" P.print_term t
   | Pattern.ConstructorExpected (ls,ty) ->
       fprintf fmt "%s %a is not a constructor of type %a"
-        (if ls.Term.ls_value = None then "Predicate" else "Function") (print_ls s id) ls
-        (print_type s id) ty
+        (if ls.Term.ls_value = None then "Predicate" else "Function") P.print_ls ls
+        P.print_ty ty
   | Pattern.NonExhaustive pl ->
       fprintf fmt "Pattern not covered by a match:@\n  @[%a@]"
-        (print_pat s id) (List.hd pl)
+        P.print_pat (List.hd pl)
   | Decl.BadConstructor ls ->
-      fprintf fmt "Bad constructor: %a" (print_ls s id) ls
+      fprintf fmt "Bad constructor: %a" P.print_ls ls
   | Decl.BadRecordField ls ->
-      fprintf fmt "Not a record field: %a" (print_ls s id) ls
-  | Decl.RecordFieldMissing (_cs,ls) ->
-      fprintf fmt "Field %a is missing" (print_ls s id) ls
-  | Decl.DuplicateRecordField (_cs,ls) ->
-      fprintf fmt "Field %a is used twice in the same constructor" (print_ls s id) ls
+      fprintf fmt "Not a record field: %a" P.print_ls ls
+  | Decl.RecordFieldMissing ls ->
+      fprintf fmt "Field %a is missing" P.print_ls ls
+  | Decl.DuplicateRecordField ls ->
+      fprintf fmt "Field %a is used twice in the same constructor" P.print_ls ls
   | Decl.IllegalTypeAlias ts ->
       fprintf fmt
         "Type symbol %a is a type alias and cannot be declared as algebraic"
-        (print_ts s id) ts
+        P.print_ts ts
   | Decl.NonFoundedTypeDecl ts ->
-      fprintf fmt "Cannot construct a value of type %a" (print_ts s id) ts
+      fprintf fmt "Cannot construct a value of type %a" P.print_ts ts
   | Decl.NonPositiveTypeDecl (_ts, ls, ty) ->
       fprintf fmt "Constructor %a \
           contains a non strictly positive occurrence of type %a"
-        (print_ls s id) ls (print_type s id) ty
+        P.print_ls ls P.print_ty ty
   | Decl.InvalidIndDecl (_ls, pr) ->
       fprintf fmt "Ill-formed inductive clause %a"
-        (print_pr s id) pr
+        P.print_pr pr
   | Decl.NonPositiveIndDecl (_ls, pr, ls1) ->
       fprintf fmt "Inductive clause %a contains \
           a non strictly positive occurrence of symbol %a"
-        (print_pr s id) pr (print_ls s id) ls1
+        P.print_pr pr P.print_ls ls1
   | Decl.BadLogicDecl (ls1,ls2) ->
       fprintf fmt "Ill-formed definition: symbols %a and %a are different"
-        (print_ls s id) ls1 (print_ls s id) ls2
+        P.print_ls ls1 P.print_ls ls2
   | Decl.UnboundVar vs ->
-      fprintf fmt "Unbound variable:\n%a" (print_vsty s id) vs
+      fprintf fmt "Unbound variable:\n%a" P.print_vsty vs
   | Decl.ClashIdent id ->
       fprintf fmt "Ident %s is defined twice" id.Ident.id_string
   | Decl.EmptyDecl ->
       fprintf fmt "Empty declaration"
   | Decl.EmptyAlgDecl ts ->
-      fprintf fmt "Algebraic type %a has no constructors" (print_ts s id) ts
+      fprintf fmt "Algebraic type %a has no constructors" P.print_ts ts
   | Decl.EmptyIndDecl ls ->
-      fprintf fmt "Inductive predicate %a has no constructors" (print_ls s id) ls
+      fprintf fmt "Inductive predicate %a has no constructors" P.print_ls ls
   | Decl.KnownIdent id ->
       fprintf fmt "Ident %s is already declared" id.Ident.id_string
   | Decl.UnknownIdent id ->
@@ -211,35 +188,46 @@ let bypass_pretty s id =
       fprintf fmt "Ident %s is already declared, with a different declaration"
         id.Ident.id_string
   | Decl.NoTerminationProof ls ->
-      fprintf fmt "Cannot prove the termination of %a" (print_ls s id) ls
+      fprintf fmt "Cannot prove the termination of %a" P.print_ls ls
   | _ -> Format.fprintf fmt "Uncaught: %a" Exn_printer.exn_printer exn
   end
 
 let get_exception_message ses id e =
+  let module P = (val (p ses id)) in
   match e with
-  | Controller_itp.Noprogress ->
+  | Session_itp.NoProgress ->
       Pp.sprintf "Transformation made no progress\n", Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans s ->
       Pp.sprintf "Error in transformation function: %s \n" s, Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans_decl (s, ld) ->
       Pp.sprintf "Error in transformation %s during inclusion of following declarations:\n%a" s
-        (Pp.print_list (fun fmt () -> Format.fprintf fmt "\n") (print_tdecl ses id)) ld,
+        (Pp.print_list (fun fmt () -> Format.fprintf fmt "\n") P.print_tdecl) ld,
       Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans_term (s, t) ->
       Pp.sprintf "Error in transformation %s during with term:\n %a : %a " s
-        (print_term ses id) t (print_opt_type ses id) t.Term.t_ty,
+        P.print_term t (print_opt_type ~print_type:P.print_ty) t.Term.t_ty,
       Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans_term2 (s, t1, t2) ->
       Pp.sprintf "Error in transformation %s during unification of following two terms:\n %a : %a \n %a : %a" s
-        (print_term ses id) t1 (print_opt_type ses id) t1.Term.t_ty
-        (print_term ses id) t2 (print_opt_type ses id) t2.Term.t_ty,
+        P.print_term t1 (print_opt_type ~print_type:P.print_ty) t1.Term.t_ty
+        P.print_term t2 (print_opt_type ~print_type:P.print_ty) t2.Term.t_ty,
+      Loc.dummy_position, ""
+  | Generic_arg_trans_utils.Arg_trans_term3 (s, t1, t2, t3) ->
+      Pp.sprintf "Error in transformation %s during unification of following two terms:\n %a : %a \n %a : %a\n\n%a is already matched with %a" s
+        P.print_term t1 (print_opt_type ~print_type:P.print_ty) t1.Term.t_ty
+        P.print_term t2 (print_opt_type ~print_type:P.print_ty) t2.Term.t_ty
+        P.print_term t1 P.print_term t3,
       Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans_pattern (s, pa1, pa2) ->
       Pp.sprintf "Error in transformation %s during unification of the following terms:\n %a \n %a"
-        s (print_pat ses id) pa1 (print_pat ses id) pa2, Loc.dummy_position, ""
+        s P.print_pat pa1 P.print_pat pa2, Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_trans_type (s, ty1, ty2) ->
       Pp.sprintf "Error in transformation %s during unification of the following types:\n %a \n %a"
-        s (print_type ses id) ty1 (print_type ses id) ty2, Loc.dummy_position, ""
+        s P.print_ty ty1 P.print_ty ty2, Loc.dummy_position, ""
+  | Generic_arg_trans_utils.Arg_trans_missing (s, svs) ->
+      Pp.sprintf "Error in transformation function: %s %a\n" s
+        (Pp.print_list Pp.space P.print_vs) (Term.Svs.elements svs),
+      Loc.dummy_position, ""
   | Generic_arg_trans_utils.Arg_bad_hypothesis ("rewrite", _t) ->
       Pp.sprintf "Not a rewrite hypothesis", Loc.dummy_position, ""
   | Generic_arg_trans_utils.Cannot_infer_type s ->
@@ -247,7 +235,7 @@ let get_exception_message ses id e =
   | Args_wrapper.Arg_qid_not_found q ->
       Pp.sprintf "Following hypothesis was not found: %a \n" Typing.print_qualid q, Loc.dummy_position, ""
   | Args_wrapper.Arg_pr_not_found pr ->
-      Pp.sprintf "Property not found: %a" (print_pr ses id) pr, Loc.dummy_position, ""
+      Pp.sprintf "Property not found: %a" P.print_pr pr, Loc.dummy_position, ""
   | Args_wrapper.Arg_error s ->
       Pp.sprintf "Transformation raised a general error: %s \n" s, Loc.dummy_position, ""
   | Args_wrapper.Arg_theory_not_found s ->
@@ -260,7 +248,7 @@ let get_exception_message ses id e =
   | Generic_arg_trans_utils.Unnecessary_terms l ->
       Pp.sprintf "First arguments were parsed and typed correctly but the last following are useless:\n%a"
         (Pp.print_list Pp.newline
-           (fun fmt s -> Format.fprintf fmt "%a" (print_term ses id) s)) l, Loc.dummy_position, ""
+           (fun fmt s -> Format.fprintf fmt "%a" P.print_term s)) l, Loc.dummy_position, ""
   | Args_wrapper.Arg_expected_none s ->
       Pp.sprintf "An argument was expected of type %s, none were given" s, Loc.dummy_position, ""
   | e ->
@@ -278,8 +266,8 @@ module C = Controller_itp.Make(S)
 
 let debug = Debug.register_flag "itp_server" ~desc:"ITP server"
 
-let debug_labels = Debug.register_info_flag "print_labels"
-  ~desc:"Print@ labels@ of@ identifiers@ and@ expressions."
+let debug_attrs = Debug.register_info_flag "print_model_attrs"
+  ~desc:"Print@ attrs@ of@ identifiers@ and@ expressions@ in prover@ results."
 
 (****************)
 (* Command list *)
@@ -425,8 +413,9 @@ let get_locations (task: Task.task) =
   let relativize f =
     try Hstr.find file_cache f
     with Not_found ->
-      (* FIXME: this an abusive use of Sysutil.absolutize_path *)
-      let g = Sysutil.absolutize_path "" (Sysutil.relativize_filename session_dir f) in
+      let path = Sysutil.relativize_filename session_dir f in
+      (* FIXME: this an abusive use of Sysutil.system_dependent_absolute_path *)
+      let g = Sysutil.system_dependent_absolute_path session_dir path in
       Hstr.replace file_cache f g;
       g in
   let color_loc ~color ~loc =
@@ -491,7 +480,7 @@ let get_modified_node n =
   | Remove nid -> Some nid
   | Next_Unproven_Node_Id (_, nid) -> Some nid
   | Initialized _ -> None
-  | Saved -> None
+  | Saved | Saving_needed _ -> None
   | Message _ -> None
   | Dead _ -> None
   | Task (nid, _, _) -> Some nid
@@ -580,8 +569,9 @@ end
 
   let relativize_location s loc =
     let f, l, b, e = Loc.get loc in
-    (* FIXME: this an abusive use of Sysutil.absolutize_path *)
-    let f = Sysutil.absolutize_path "" (Sysutil.relativize_filename (Session_itp.get_dir s) f) in
+    let path = Sysutil.relativize_filename (Session_itp.get_dir s) f in
+    (* FIXME: this an abusive use of Sysutil.system_dependent_absolute_path *)
+    let f = Sysutil.system_dependent_absolute_path "" path in
     Loc.user_position f l b e
 
   let capture_parse_or_type_errors f cont =
@@ -600,10 +590,10 @@ end
 
   (* Reload_files that is used even if the controller is not correct. It can
      be incorrect and end up in a correct state. *)
-  let reload_files cont ~use_shapes =
+  let reload_files cont ~shape_version =
     capture_parse_or_type_errors
       (fun c ->
-        try let (_,_) = reload_files ~use_shapes c in [] with
+        try let (_,_) = reload_files ~shape_version c in [] with
         | Errors_list le -> le) cont
 
   let add_file cont ?format fname =
@@ -849,11 +839,11 @@ end
     in
     task_text, loc_color_list
 
-  let create_ce_tab ~print_labels s res any list_loc =
+  let create_ce_tab ~print_attrs s res any list_loc =
     let f = get_encapsulating_file s any in
     let filename = Session_itp.system_path s f in
     let source_code = Sysutil.file_contents filename in
-    Model_parser.interleave_with_source ~print_labels ?start_comment:None ?end_comment:None
+    Model_parser.interleave_with_source ~print_attrs ?start_comment:None ?end_comment:None
       ?me_name_trans:None res.Call_provers.pr_model ~rel_filename:filename
       ~source_code:source_code ~locations:list_loc
 
@@ -891,7 +881,7 @@ end
       | ATh t ->
           P.notify (Task (nid, "Theory " ^ (theory_name t).Ident.id_string, []))
       | APa pid ->
-          let print_labels = Debug.test_flag debug_labels in
+          let print_attrs = Debug.test_flag debug_attrs in
           let pa = get_proof_attempt_node  d.cont.controller_session pid in
           let parid = pa.parent in
           let name = Pp.string_of Whyconf.print_prover pa.prover in
@@ -906,7 +896,7 @@ end
                     res.Call_provers.pr_answer
                 in
                 let ce_result =
-                  Pp.string_of (Model_parser.print_model_human ~print_labels ?me_name_trans:None)
+                  Pp.string_of (Model_parser.print_model_human ~print_attrs ?me_name_trans:None)
                   res.Call_provers.pr_model
                 in
                 if ce_result = "" then
@@ -920,7 +910,7 @@ end
                       result ^ "\n\n" ^ "Counterexample suggested by the prover:\n\n" ^ ce_result
                     in
                     let (source_result, list_loc) =
-                      create_ce_tab d.cont.controller_session ~print_labels res any old_list_loc
+                      create_ce_tab d.cont.controller_session ~print_attrs res any old_list_loc
                     in
                     P.notify (Source_and_ce (source_result, list_loc));
                     P.notify (Task (nid, prover_text ^ result_pr, old_list_loc))
@@ -939,6 +929,9 @@ end
 
   (* -------------------- *)
 
+  (* True when session differs from the saved session *)
+  let session_needs_saving = ref false
+
   (* Add a file into the session when (Add_file_req f) is sent *)
   (* Note that f is the path from execution directory to the file and fn is the
      path from the session directory to the file. *)
@@ -950,16 +943,16 @@ end
       P.notify (Message (Information ("File already in session: " ^ f)))
     with Not_found ->
       if (Sys.file_exists f) then
+        let l = add_file cont f in
+        let file = find_file_from_path cont.controller_session fn in
+        send_new_subtree_from_file file;
+        read_and_send (Session_itp.system_path cont.controller_session file);
         begin
-          match add_file cont f with
+          match l with
           | [] ->
-(* TODO ??? readd this line with merge:   session_needs_saving := true; *)
-             let file = find_file_from_path cont.controller_session fn in
-             send_new_subtree_from_file file;
-             read_and_send (Sysutil.absolutize_path dir fn);
+             session_needs_saving := true;
              P.notify (Message (Information "file added in session"))
           | l ->
-             read_and_send (Sysutil.absolutize_path dir fn);
              List.iter
                (function
                  | (loc,rel_loc,s) ->
@@ -973,7 +966,7 @@ end
 
   let init_server ?(send_source=true) config env f =
     Debug.dprintf debug "loading session %s@." f;
-    let ses,use_shapes = Session_itp.load_session f in
+    let ses,shape_version = Session_itp.load_session f in
     Debug.dprintf debug "creating controller@.";
     let c = create_controller config env ses in
     let shortcuts =
@@ -993,7 +986,9 @@ end
          (s,n,p) :: acc) (Whyconf.get_provers config) []
     in
     load_strategies c;
-    let transformation_list = List.map (fun (a, b) -> (a, Format.sprintf "%( %)" b)) (list_transforms ()) in
+    let transformation_list = List.map
+      (fun (a, b) -> (a, Format.sprintf "@[%(%)@]" b))
+      (list_transforms ()) in
     let strategies_list = list_strategies c in
     let infos =
       {
@@ -1011,7 +1006,7 @@ end
                      };
     Debug.dprintf debug "reloading source files@.";
     let d = get_server_data () in
-    let x = reload_files d.cont ~use_shapes in
+    let x = reload_files d.cont ~shape_version in
     reset_and_send_the_whole_tree ();
     (* After initial sending, we don't check anymore that there is a need to
            focus on a specific node. *)
@@ -1028,6 +1023,8 @@ end
 
   (* ----------------- Schedule proof attempt -------------------- *)
 
+  exception Return
+
   (* Callback of a proof_attempt *)
   let callback_update_tree_proof cont panid pa_status =
     let ses = cont.controller_session in
@@ -1039,17 +1036,23 @@ end
         let parent = node_ID_from_pn parent_id in
         new_node ~parent (APa panid)
     in
-    begin match pa_status with
-          | UpgradeProver _ ->
-             let n = get_node_name (APa panid) in
-             P.notify (Node_change (node_id, Name_change n))
-          | _ -> ()
-    end;
-    let pa = get_proof_attempt_node ses panid in
-    let new_status =
-      Proof_status_change (pa_status, pa.proof_obsolete, pa.limit)
-    in
-    P.notify (Node_change (node_id, new_status))
+    try
+      begin match pa_status with
+            | UpgradeProver _ ->
+               let n = get_node_name (APa panid) in
+               P.notify (Node_change (node_id, Name_change n))
+            | Removed _ -> P.notify (Remove node_id); raise Return
+            | Uninstalled _ -> ()
+            | Undone | Scheduled | Running
+            | Interrupted | Detached | Done _
+            | InternalFailure _ -> ()
+      end;
+      let pa = get_proof_attempt_node ses panid in
+      let new_status =
+        Proof_status_change (pa_status, pa.proof_obsolete, pa.limit)
+      in
+      P.notify (Node_change (node_id, new_status))
+    with Return -> ()
 
   let notify_change_proved c x =
     try
@@ -1130,8 +1133,15 @@ end
       with | _ -> "" in
       let msg, loc, arg_opt = get_exception_message d.cont.controller_session id e in
       let tr_applied = tr ^ " " ^ (List.fold_left (fun x acc -> x ^ " " ^ acc) "" args) in
-      P.notify (Message (Transf_error (node_ID_from_pn id, tr_applied, arg_opt, loc, msg, doc)))
-    | _ -> ()
+      P.notify (Message (Transf_error (false, node_ID_from_pn id, tr_applied, arg_opt, loc, msg, doc)))
+    | TSscheduled -> ()
+    | TSfatal (id, e) ->
+      let doc = try
+        Pp.sprintf "%s\n%a" tr Pp.formatted (Trans.lookup_trans_desc tr)
+      with | _ -> "" in
+      let msg, loc, arg_opt = get_exception_message d.cont.controller_session id e in
+      let tr_applied = tr ^ " " ^ (List.fold_left (fun x acc -> x ^ " " ^ acc) "" args) in
+      P.notify (Message (Transf_error (true, node_ID_from_pn id, tr_applied, arg_opt, loc, msg, doc)))
 
   let apply_transform node_id t args =
     let d = get_server_data () in
@@ -1139,12 +1149,15 @@ end
     let rec apply_transform nid t args =
       match nid with
       | APn id ->
-        if Session_itp.check_if_already_exists d.cont.controller_session id t args then
-          P.notify (Message (Information "Transformation already applied"))
+        if Session_itp.is_detached d.cont.controller_session nid then
+          P.notify (Message (Information "Transformation cannot apply on detached node"))
         else
-          let callback = callback_update_tree_transform t args in
-          C.schedule_transformation d.cont id t args ~callback
-            ~notification:(notify_change_proved d.cont)
+          if Session_itp.check_if_already_exists d.cont.controller_session id t args then
+            P.notify (Message (Information "Transformation already applied"))
+          else
+            let callback = callback_update_tree_transform t args in
+            C.schedule_transformation d.cont id t args ~callback
+              ~notification:(notify_change_proved d.cont)
       | APa panid ->
         let parent_id = get_proof_attempt_parent d.cont.controller_session panid in
         apply_transform (APn parent_id) t args
@@ -1189,6 +1202,11 @@ end
         (Message
            (Information
               "for bisection please select some proof attempt"))
+       | C.CannotRunBisectionOn _ ->
+          P.notify
+            (Message
+               (Error
+                  "for bisection please select a successful proof attempt"))
 
 
   (* ----------------- run strategy -------------------- *)
@@ -1265,7 +1283,9 @@ end
     let _old_focus = !focused_node in
     unfocus ();
     clear_tables ();
-    let l = reload_files d.cont ~use_shapes:true in
+    let l = reload_files d.cont
+                         ~shape_version:(Some Termcode.current_shape_version)
+    in
     reset_and_send_the_whole_tree ();
     match l with
     | [] ->
@@ -1305,6 +1325,37 @@ end
     let d = get_server_data () in
     C.mark_as_obsolete ~notification:(notify_change_proved d.cont) d.cont n
 
+  (* ----------------- Get counterexampes ------------ *)
+  let get_ce nid =
+    let d = get_server_data () in
+    let session = d.cont.controller_session in
+    let config = d.cont.controller_config in
+    let any = any_from_node_ID nid in
+    match any with
+    | None -> P.notify (Message (Error "Please select a node id"))
+    | Some (APa panid) ->
+      let pan = Session_itp.get_proof_attempt_node session panid in
+      let filter_prover =
+        Whyconf.mk_filter_prover ~version:pan.prover.Whyconf.prover_version
+          ~altern:"counterexamples" pan.prover.Whyconf.prover_name
+      in
+      begin match Whyconf.filter_one_prover config filter_prover with
+      | config_prover ->
+        (* nid should still exists when scheduling attempt *)
+        let parent_pn = Session_itp.get_proof_attempt_parent session panid in
+        let nid' = node_ID_from_pn parent_pn in
+        remove_node nid;
+        schedule_proof_attempt nid' config_prover pan.limit
+      | exception Whyconf.ProverNotFound (_, fp) ->
+        let msg = Format.asprintf "Counterexamples alternative for prover does \
+                                   not exists: %a"
+            Whyconf.print_filter_prover fp
+        in
+        P.notify (Message (Error msg))
+      end
+    | _ -> P.notify (Message (Error "Please select a proofattempt"))
+
+
   (* ----------------- locate next unproven node -------------------- *)
 
   let notify_first_unproven_node d ni =
@@ -1332,9 +1383,10 @@ end
    (* Check if a request is valid (does not suppose existence of obsolete node_id) *)
    let request_is_valid r =
      match r with
-     | Save_req | Reload_req | Get_file_contents _ | Save_file_req _
+     | Save_req | Check_need_saving_req | Reload_req
+     | Get_file_contents _ | Save_file_req _
      | Interrupt_req | Add_file_req _ | Set_config_param _ | Set_prover_policy _
-     | Exit_req | Get_global_infos -> true
+     | Exit_req | Get_global_infos | Itp_communication.Unfocus_req -> true
      | Get_first_unproven_node ni ->
          Hint.mem model_any ni
      | Remove_subtree nid ->
@@ -1351,6 +1403,121 @@ end
 
   (* ----------------- treat_request -------------------- *)
 
+  let treat_request d r =
+    match r with
+    | Get_global_infos ->
+       Debug.dprintf debug "sending initialization infos@.";
+       P.notify (Initialized d.global_infos)
+    | Save_req                     ->
+       save_session ();
+       session_needs_saving := false
+    | Reload_req                   ->
+       reload_session ();
+       session_needs_saving := true
+    | Get_first_unproven_node ni   ->
+      notify_first_unproven_node d ni
+    | Remove_subtree nid           ->
+       remove_node nid;
+       session_needs_saving := true
+    | Copy_paste (from_id, to_id) ->
+       let from_any = any_from_node_ID from_id in
+       let to_any = any_from_node_ID to_id in
+       begin
+        match from_any, to_any with
+        | None, _ | _, None ->
+          P.notify (Message (Error "Please select a node id"));
+        | Some from_any, Some to_any ->
+          begin
+            try
+              C.copy_paste
+                ~notification:(notify_change_proved d.cont)
+                ~callback_pa:(callback_update_tree_proof d.cont)
+                ~callback_tr:(callback_update_tree_transform)
+                d.cont from_any to_any;
+              session_needs_saving := true
+            with C.BadCopyPaste ->
+              P.notify (Message (Error "invalid copy"))
+          end
+       end
+    | Get_file_contents f          ->
+       read_and_send f
+    | Save_file_req (name, text)   ->
+       save_file name text
+    | Check_need_saving_req ->
+       P.notify (Saving_needed !session_needs_saving)
+    | Get_task(nid,b,loc)          ->
+       send_task nid b loc
+    | Interrupt_req                ->
+       C.interrupt ()
+    | Command_req (nid, cmd)       ->
+       let snid = any_from_node_ID nid in
+       begin
+         match interp commands_table d.cont snid cmd with
+         | Transform (s, _t, args) ->
+            apply_transform nid s args;
+            session_needs_saving := true
+         | Query s                 ->
+            P.notify (Message (Query_Info (nid, s)))
+         | Prove (p, limit)        ->
+            schedule_proof_attempt nid p limit;
+            session_needs_saving := true
+         | Strategies st           ->
+             run_strategy_on_task nid st;
+             session_needs_saving := true
+         | Edit p                  ->
+             schedule_edition nid p;
+             session_needs_saving := true
+         | Get_ce                  ->
+             get_ce nid;
+             session_needs_saving := true
+         | Bisect                  ->
+             schedule_bisection nid;
+             session_needs_saving := true
+         | Replay valid_only       ->
+             replay ~valid_only snid;
+             session_needs_saving := true
+         | Clean                   ->
+             clean snid;
+             session_needs_saving := true
+         | Mark_Obsolete           ->
+             mark_obsolete snid;
+             session_needs_saving := true
+         | Focus_req ->
+             let d = get_server_data () in
+             let s = d.cont.controller_session in
+             let any = any_from_node_ID nid in
+             begin match any with
+             | None -> P.notify (Message (Error "Please select a node id"))
+             | Some any ->
+               let focus_on =
+                 match any with
+                 | APa pa -> APn (Session_itp.get_proof_attempt_parent s pa)
+                 | _ -> any
+               in
+               focused_node := Focus_on [focus_on];
+               reset_and_send_the_whole_tree ()
+             end
+         | Server_utils.Unfocus_req -> unfocus ()
+         | Help_message s          -> P.notify (Message (Information s))
+         | QError s                -> P.notify (Message (Query_Error (nid, s)))
+         | Other (s, _args)        ->
+             P.notify (Message (Information ("Unknown command: "^s)))
+       end
+    | Add_file_req f ->
+      add_file_to_session d.cont f
+    | Set_config_param(s,i)   ->
+       begin
+         match s with
+         | "max_tasks" -> Controller_itp.set_session_max_tasks i
+         | "timelimit" -> Server_utils.set_session_timelimit i
+         | "memlimit" -> Server_utils.set_session_memlimit i
+         | _ -> P.notify (Message (Error ("Unknown config parameter "^s)))
+       end
+    | Set_prover_policy(p,u)   ->
+       let c = d.cont in
+       Controller_itp.set_session_prover_upgrade_policy c p u
+    | Unfocus_req             -> unfocus ()
+    | Exit_req                -> exit 0
 
   let treat_request r =
     let d = get_server_data () in
@@ -1370,114 +1537,26 @@ end
              Itp_communication.print_request r) r)))
       end
     else
-    try (
-      match r with
-      | Get_global_infos ->
-         let d= get_server_data () in
-         Debug.dprintf debug "sending initialization infos@.";
-         P.notify (Initialized d.global_infos)
-    | Save_req                     -> save_session ()
-    | Reload_req                   -> reload_session ()
-    | Get_first_unproven_node ni   ->
-      notify_first_unproven_node d ni
-    | Remove_subtree nid           -> remove_node nid
-    | Copy_paste (from_id, to_id)    ->
-        let from_any = any_from_node_ID from_id in
-        let to_any = any_from_node_ID to_id in
-        begin
-        match from_any, to_any with
-        | None, _ | _, None ->
-          P.notify (Message (Error "Please select a node id"));
-        | Some from_any, Some to_any ->
-          begin
-            try
-              C.copy_paste
-                ~notification:(notify_change_proved d.cont)
-                ~callback_pa:(callback_update_tree_proof d.cont)
-                ~callback_tr:(callback_update_tree_transform)
-                d.cont from_any to_any
-            with C.BadCopyPaste ->
-              P.notify (Message (Error "invalid copy"))
-          end
-        end
-    | Get_file_contents f          ->
-        read_and_send f
-    | Save_file_req (name, text)   ->
-        save_file name text;
-    | Get_task(nid,b,loc)          -> send_task nid b loc
-    | Interrupt_req                -> C.interrupt ()
-    | Command_req (nid, cmd)       ->
-      begin
-        let snid = any_from_node_ID nid in
-        match interp commands_table d.cont snid cmd with
-        | Transform (s, _t, args) -> apply_transform nid s args
-        | Query s                 -> P.notify (Message (Query_Info (nid, s)))
-        | Prove (p, limit)        ->
-            schedule_proof_attempt nid p limit
-        | Strategies st           ->
-            run_strategy_on_task nid st
-        | Edit p                  -> schedule_edition nid p
-        | Bisect                  -> schedule_bisection nid
-        | Replay valid_only       -> replay ~valid_only snid
-        | Clean                   -> clean snid
-        | Mark_Obsolete           -> mark_obsolete snid
-        | Focus_req ->
-            let d = get_server_data () in
-            let s = d.cont.controller_session in
-            let any = any_from_node_ID nid in
-            begin match any with
-            | None -> P.notify (Message (Error "Please select a node id"))
-            | Some any ->
-              let focus_on =
-                match any with
-                | APa pa -> APn (Session_itp.get_proof_attempt_parent s pa)
-                | _ -> any
-              in
-              focused_node := Focus_on [focus_on];
-              reset_and_send_the_whole_tree ()
-            end
-        | Unfocus_req -> unfocus ()
-        | Help_message s          -> P.notify (Message (Information s))
-        | QError s                -> P.notify (Message (Query_Error (nid, s)))
-        | Other (s, _args)        ->
-            P.notify (Message (Information ("Unknown command: "^s)))
-      end
-    | Add_file_req f ->
-      add_file_to_session d.cont f;
-(*      let f = Sysutil.relativize_filename
-          (Session_itp.get_dir d.cont.controller_session) f in
-         read_and_send f *)
-      ()
-(*
-    | Open_session_req file_or_dir_name ->
-        let b = init_cont file_or_dir_name in
-        if b then
-          reload_session ()
-        else
-          () (* Eventually print debug here *)
-*)
-    | Set_config_param(s,i)   ->
-       begin
-         match s with
-         | "max_tasks" -> Controller_itp.set_session_max_tasks i
-         | "timelimit" -> Server_utils.set_session_timelimit i
-         | "memlimit" -> Server_utils.set_session_memlimit i
-         | _ -> P.notify (Message (Error ("Unknown config parameter "^s)))
-       end
-    | Set_prover_policy(p,u)   ->
-       let c = d.cont in
-       Controller_itp.set_session_prover_upgrade_policy c p u
-    | Exit_req                -> exit 0
-     )
-    with
-    | C.TransAlreadyExists (name,args) ->
-        P.notify (Message (Error
-          (Pp.sprintf "Transformation %s with arg [%s] already exists" name args)))
-    | e when not (Debug.test_flag Debug.stack_trace)->
-      P.notify (Message (Error (Pp.string_of
-          (fun fmt (r,e) -> Format.fprintf fmt
-             "There was an unrecoverable error during treatment of request:\n %a\nwith exception: %a"
-             print_request r Exn_printer.exn_printer e ) (r, e))))
+      try treat_request d r
+      with
+      | C.TransAlreadyExists (name,args) ->
+         P.notify
+           (Message
+              (Error
+                 (Pp.sprintf "Transformation %s with arg [%s] already exists"
+                             name args)))
+      | C.GoalNodeDetached _id ->
+        P.notify
+           (Message
+              (Information
+                 ("Transformation cannot apply on detached node")))
+      | e when not (Debug.test_flag Debug.stack_trace)->
+         P.notify
+           (Message
+              (Error
+                 (Pp.sprintf
+                    "There was an unrecoverable error during treatment of request:\n %a\nwith exception: %a"
+                    print_request r Exn_printer.exn_printer e)))
 
   let treat_requests () : bool =
     List.iter treat_request (P.get_requests ());

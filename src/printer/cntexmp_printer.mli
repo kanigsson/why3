@@ -9,6 +9,8 @@
 (*                                                                  *)
 (********************************************************************)
 
+open Wstdlib
+open Ident
 open Term
 
 (* Information about the term that triggers VC.  *)
@@ -35,9 +37,16 @@ module S : Set.S with type elt = term and type t = Set.Make(TermCmp).t
 val add_model_element: Term.term -> S.t -> S.t
 
 (*
-val model_trace_for_postcondition: labels: unit Ident.Mlab.t -> vc_term_info -> unit Ident.Mlab.t
+val model_trace_for_postcondition:
+  attrs:Ident.Sattr.t -> vc_term_info -> Ident.Sattr.t
  *)
 
 val check_enter_vc_term: Term.term -> bool -> vc_term_info -> unit
 
 val check_exit_vc_term: Term.term -> bool -> vc_term_info -> unit
+
+val update_info_labels: string -> Sattr.t Mstr.t -> Term.term ->
+  Term.lsymbol -> Sattr.t Mstr.t
+
+val check_for_counterexample: Term.term -> bool
+(* Check if a term should be added for counterexample analysis *)

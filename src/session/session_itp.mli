@@ -70,7 +70,7 @@ val file_path : file -> file_path
 val file_format : file -> string option
 val file_theories : file -> theory list
 val system_path : session -> file -> string
-(** the system-dependent path associated to that file *)
+(** the system-dependent absolute path associated to that file *)
 
 val basename : file_path -> string
 
@@ -184,8 +184,9 @@ val read_file :
    signaled with exceptions .  *)
 
 val merge_files :
-  use_shapes:bool -> Env.env -> session -> session -> exn list * bool * bool
-(** [merge_files ~use_shapes env ses old_ses] merges the file sections
+  shape_version:int option ->
+  Env.env -> session -> session -> exn list * bool * bool
+(** [merge_files ~use_shape_version env ses old_ses] merges the file sections
     of session [s] with file sections of the same name in old session
     [old_ses]. Recursively, for each theory whose name is identical to
     old theories, it is attempted to associate the old goals,
@@ -236,11 +237,11 @@ val mark_obsolete: session -> proofAttemptID -> unit
 val save_session : session -> unit
 (** [save_session s] Save the session [s] *)
 
-val load_session : string -> session * bool
+val load_session : string -> session * int option
 (** [load_session dir] load a session in directory [dir]; all the
     tasks are initialised to None
 
-    The returned boolean is set when there was shapes read from disk.
+    The second result is the shape version read from disk, if any
 
     raises [SessionFileError msg] if the database file cannot be read
     correctly.
@@ -266,6 +267,7 @@ val remove_subtree: notification:notifier -> removed:notifier ->
 
 (** {2 proved status} *)
 
+val pa_proved : session -> proofAttemptID -> bool
 val th_proved : session -> theory -> bool
 val pn_proved : session -> proofNodeID -> bool
 val tn_proved : session -> transID -> bool
@@ -296,13 +298,18 @@ val change_prover : notifier -> session -> proofNodeID -> Whyconf.prover -> Whyc
    status is set to obsolete.
  *)
 
-(** Edition of session *)
+(** Extra session update operations *)
 
 val find_file_from_path: session -> string list -> file
 (** raise [Not_found] of path does not appear in session *)
 
 val rename_file: session -> string -> string -> (string list) * (string list)
 (** [rename_file s from_file to_file] renames the
-    filename in session from [from_file] to [to_file]
+    file section in session [s] named [from_file] into [to_file]
     @return the paths relative to the session dir
-*)
+
+    Beware that this function does not have any effect on the user's
+    file system: if the considered files corresponds the real files,
+    they must be renamed independently. See for example the use in
+    [why3session/why3session_update].
+  *)

@@ -44,7 +44,9 @@ let meta_monomorphic_types_only =
 
 
 let check_ts ign_ts ts =
-  ts.Ty.ts_args <> [] && not (Ty.Sts.mem ts ign_ts)
+  ts.Ty.ts_args <> [] &&
+  ts.Ty.ts_def = Ty.NoDef &&
+  not (Ty.Sts.mem ts ign_ts)
 
 let check_ls ign_ls ls =
   not (Term.Sls.mem ls ign_ls) &&
@@ -77,7 +79,10 @@ let detect_polymorphism_in_decl ign_ts ign_ls ign_pr d =
         monomorphic, since it is checked by typing *)
      List.fold_left (fun acc (ls,_) -> acc || check_ls ign_ls ls) false indl
   | Dprop (_,pr,t) ->
-     (* todo: NE PAS TESTER le goal *)
+     (* todo: DO NOT TEST the goal. This requires skolemizing
+        type variables in the goal _before_ eliminate_epsilon
+        in the transformation chain, to avoid producing
+        polymorphic identities in monomorphic tasks *)
      not (Spr.mem pr ign_pr) &&
        let s = Term.t_ty_freevars Ty.Stv.empty t in
        not (Ty.Stv.is_empty s)

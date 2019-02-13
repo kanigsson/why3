@@ -40,8 +40,8 @@ type global_information =
 
 type message_notification =
   | Proof_error           of node_ID * string
-  | Transf_error          of node_ID * string * string * Loc.position * string * string
-  (** Transf_error (nid, trans_with_arg, arg_opt, loc, error_msg, doc_of_transf *)
+  | Transf_error          of bool * node_ID * string * string * Loc.position * string * string
+  (** Transf_error (is_fatal, nid, trans_with_arg, arg_opt, loc, error_msg, doc_of_transf *)
   | Strat_error           of node_ID * string
   | Replay_Info           of string
   | Query_Info            of node_ID * string
@@ -76,6 +76,7 @@ type color =
   | Goal_color
   | Error_color
   | Error_line_color
+  | Error_font_color
 
 type update_info =
   | Proved of bool
@@ -99,8 +100,10 @@ type notification =
      next unproven node from this node *)
   | Initialized  of global_information
   (** initial global data *)
+  | Saving_needed of bool
+  (** the session needs saving when argument is true *)
   | Saved
-  (** the session was saved on disk *)
+  (** the session was just saved on disk *)
   | Message      of message_notification
   (** an informative message, can be an error message *)
   | Dead         of string
@@ -133,14 +136,13 @@ type ide_request =
   | Save_file_req           of string * string
   (** [Save_file_req(filename, content_of_file)] saves the file *)
   | Get_first_unproven_node of node_ID
+  | Unfocus_req
   | Save_req
   | Reload_req
+  | Check_need_saving_req
   | Exit_req
   | Interrupt_req
   | Get_global_infos
-
-(* Return true if the request modify the session *)
-val modify_session: ide_request -> bool
 
 
 val print_request: Format.formatter -> ide_request -> unit

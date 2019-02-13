@@ -17,22 +17,22 @@ open Decl
 open Theory
 open Task
 
-let meta_inst = register_meta "encoding : inst" [MTty]
+let meta_inst = register_meta "encoding:inst" [MTty]
   ~desc:"Specify@ which@ types@ should@ instantiate@ symbols@ marked@ by@ \
-         'encoding : lskept'."
+         'encoding:lskept'."
 
-let meta_lskept = register_meta "encoding : lskept" [MTlsymbol]
+let meta_lskept = register_meta "encoding:lskept" [MTlsymbol]
   ~desc:"Specify@ which@ function/predicate@ symbols@ should@ be@ kept.@ \
          When@ the@ symbol@ is@ polymorphic,@ generate@ every@ possible@ \
-         type@ instances@ with@ types@ marked@ by@ 'encoding : inst'."
+         type@ instances@ with@ types@ marked@ by@ 'encoding:inst'."
 
-let meta_lsinst = register_meta "encoding : lsinst" [MTlsymbol;MTlsymbol]
+let meta_lsinst = register_meta "encoding:lsinst" [MTlsymbol;MTlsymbol]
   ~desc:"Specify@ which@ type@ instances@ of@ symbols@ should@ be@ kept.@ \
          The first@ symbol@ specifies@ the@ polymorphic@ symbol,@ \
          the@ second@ provides@ a@ monomorphic@ type@ signature@ to@ keep."
 
 let meta_select_inst = register_meta_excl "select_inst" [MTstring]
-  ~desc:"Specify@ the@ types@ to@ mark@ with@ 'encoding : inst':@;  \
+  ~desc:"Specify@ the@ types@ to@ mark@ with@ 'encoding:inst':@;  \
     @[\
       - none: @[don't@ mark@ any@ type@ automatically@]@\n\
       - goal: @[mark@ every@ closed@ type@ in@ the@ goal@]@\n\
@@ -40,7 +40,7 @@ let meta_select_inst = register_meta_excl "select_inst" [MTstring]
     @]"
 
 let meta_select_lskept = register_meta_excl "select_lskept" [MTstring]
-  ~desc:"Specify@ the@ symbols@ to@ mark@ with@ 'encoding : lskept':@;  \
+  ~desc:"Specify@ the@ symbols@ to@ mark@ with@ 'encoding:lskept':@;  \
     @[\
       - none: @[don't@ mark@ any@ symbol@ automatically@]@\n\
       - goal: @[mark@ every@ polymorphic@ symbol@ in@ the@ goal@]@\n\
@@ -48,7 +48,7 @@ let meta_select_lskept = register_meta_excl "select_lskept" [MTstring]
     @]"
 
 let meta_select_lsinst = register_meta_excl "select_lsinst" [MTstring]
-  ~desc:"Specify@ the@ symbols@ to@ mark@ with@ 'encoding : lsinst':@;  \
+  ~desc:"Specify@ the@ symbols@ to@ mark@ with@ 'encoding:lsinst':@;  \
     @[\
       - none: @[don't@ mark@ any@ symbol@ automatically@]@\n\
       - goal: @[mark@ every@ monomorphic@ instance@ in@ the@ goal@]@\n\
@@ -211,26 +211,16 @@ let map metas_rewrite_pr env d =
       in
       let defns,axioms = Ssubst.fold conv_f substs ([],[]) in
       ts_of_ls env ls (List.rev_append defns axioms),[]
-  | Dlogic _ -> Printer.unsupportedDecl d
+    | Dlogic _ -> Printer.unsupportedDecl d
       "Recursively-defined symbols are not supported, run eliminate_recursion"
-  | Dind _ -> Printer.unsupportedDecl d
+    | Dind _ -> Printer.unsupportedDecl d
       "Inductive predicates are not supported, run eliminate_inductive"
-  | Dprop (k,pr,f) ->
+    | Dprop (k,pr,f) ->
       let substs = ty_quant env f in
       let substs_len = Ssubst.cardinal substs in
       let conv_f tvar (task,metas) =
-        (* Format.eprintf "f0 : %a@. env : %a@." Pretty.print_fmla *)
-        (*   (t_ty_subst tvar Mvs.empty f) *)
-        (*   print_env env; *)
         let f = t_ty_subst tvar Mvs.empty f in
         let f = t_app_map (find_logic env) f in
-        (* Format.eprintf "f : %a@. env : %a@." Pretty.print_fmla f *)
-        (*   print_env menv; *)
-        (* Format.eprintf "undef ls : %a, ts : %a@." *)
-        (*   (Pp.print_iter1 Sls.iter Pp.comma Pretty.print_ls) *)
-        (*   menv.undef_lsymbol *)
-        (*   (Pp.print_iter1 Sts.iter Pp.comma Pretty.print_ts) *)
-        (*   menv.undef_tsymbol; *)
         if substs_len = 1 then
           create_prop_decl k pr f :: task, metas
         else
@@ -255,7 +245,7 @@ let ft_select_lsinst =
   ((Hstr.create 17) : (Env.env,Lsmap.t) Trans.flag_trans)
 
 let metas_from_env env =
-  let fold_inst tyl _ s = List.fold_left (fun s ty -> Sty.add ty s) s tyl in
+  let fold_inst tyl _ s = List.fold_right Sty.add tyl s in
   let fold_ls _ insts s = Mtyl.fold fold_inst insts s in
   let sty = Mls.fold fold_ls env Sty.empty in
   let add ty decls = create_meta Libencoding.meta_kept [MAty ty] :: decls in

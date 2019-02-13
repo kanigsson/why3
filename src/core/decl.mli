@@ -51,6 +51,20 @@ val ls_defn_decrease : ls_defn -> int list
     from a declaration; on the result of [make_ls_defn],
     [ls_defn_decrease] will always return an empty list. *)
 
+(** {2 Structural descent checking} *)
+
+type call_set
+type vs_graph
+
+val create_call_set : unit -> call_set
+val create_vs_graph : vsymbol list -> vs_graph
+val register_call   : call_set -> ident ->
+                      vs_graph -> ident -> term list -> unit
+val vs_graph_drop   : vs_graph -> vsymbol -> vs_graph
+val vs_graph_let    : vs_graph -> term -> vsymbol -> vs_graph
+val vs_graph_pat    : vs_graph -> term -> pattern -> vs_graph
+val find_variant    : exn -> call_set -> ident -> int list
+
 (** {2 Proposition names} *)
 
 type prsymbol = private {
@@ -82,7 +96,6 @@ type prop_kind =
   | Plemma    (** prove, use as a premise *)
   | Paxiom    (** do not prove, use as a premise *)
   | Pgoal     (** prove, do not use as a premise *)
-  | Pskip     (** do not prove, do not use as a premise *)
 
 type prop_decl = prop_kind * prsymbol * term
 
@@ -139,8 +152,8 @@ exception EmptyIndDecl of lsymbol
 
 exception BadConstructor of lsymbol
 exception BadRecordField of lsymbol
-exception RecordFieldMissing of lsymbol * lsymbol
-exception DuplicateRecordField of lsymbol * lsymbol
+exception RecordFieldMissing of lsymbol
+exception DuplicateRecordField of lsymbol
 
 (** {2 Utilities} *)
 

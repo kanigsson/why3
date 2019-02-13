@@ -15,7 +15,7 @@ open Decl
 
 (* Canonical forms for epsilon terms. *)
 type canonical =
-  | Id                             (* identity lambda    (\x (x_i). x (x_i)) *)
+  | Id of Ty.ty                    (* identity lambda    (\x (x_i). x (x_i)) *)
   | Eta of term                    (* eta-expansed term  (\(x_i). t (x_i))
                                       (x_i not in t's free variables)        *)
   | Partial of lsymbol * term list (* partial application
@@ -48,7 +48,7 @@ let canonicalize x f =
         if Mvs.set_disjoint (t_freevars Mvs.empty e) (Svs.of_list rvl)
         then Eta e
         else raise Exit
-    | Tvar u, [v] when vs_equal u v -> Id
+    | Tvar u, [v] when vs_equal u v -> Id v.vs_ty
     | Tapp (ls, [fn; {t_node = Tvar u}]), v :: vl
       when ls_equal ls fs_func_app ->
         if vs_equal u v then match_apps fn vl else raise Exit
@@ -84,8 +84,7 @@ let get_canonical ls =
   let ax = (pr, (t_forall_close vl [] f)) in
   create_param_decl cs, ax, cs
 
-let id_canonical =
-  let ty = Ty.ty_var (Ty.tv_of_string "a") in
+let id_canonical ty =
   let tyf = Ty.ty_func ty ty in
   let cs = create_fsymbol (id_fresh "identity") [] tyf in
   let vs = create_vsymbol (id_fresh "y") ty in
@@ -100,6 +99,15 @@ let get_canonical =
   try Hls.find ht ls with Not_found ->
   let res = get_canonical ls in
   Hls.add ht ls res; res
+
+let id_canonical =
+  let ht = Ty.Hty.create 3 in fun ty ->
+  try Ty.Hty.find ht ty with Not_found ->
+  let res = id_canonical ty in
+  Ty.Hty.add ht ty res; res
+
+let poly_id_canonical =
+  id_canonical (Ty.ty_var (Ty.tv_of_string "a"))
 
 type to_elim =
   | All           (* eliminate all epsilon-terms *)
@@ -124,12 +132,12 @@ let rec lift_f el bv acc t0 =
               t_map_fold (lift_f el bv) acc t0
             else
               let f = t_let_close_simp vs t2 f in
-              lift_f el bv acc (t_label_copy t0 f)
+              lift_f el bv acc (t_attr_copy t0 f)
         | _ ->
             t_map_fold (lift_f el bv) acc t0
       else
         let f = t_let_close_simp vs t1 f in
-        lift_f el bv acc (t_label_copy t0 f)
+        lift_f el bv acc (t_attr_copy t0 f)
   in
   match t0.t_node with
     (* cannot merge the 2 patterns because of warning 57 *)
@@ -144,8 +152,9 @@ let rec lift_f el bv acc t0 =
       let vl = Mvs.keys (Mvs.set_diff (t_vars t0) bv) in
       let vs, f = t_open_bound fb in
       let acc, t = match canonicalize vs f with
-        | Id ->
-            let ld, ax, cs = id_canonical in
+        | Id ty ->
+            let ld, ax, cs = if Ty.ty_closed ty then
+              id_canonical ty else poly_id_canonical in
             let abst, axml = acc in
             (ld :: abst, ax :: axml), fs_app cs [] vs.vs_ty
         | Eta t -> lift_f el bv acc t
@@ -180,15 +189,22 @@ let rec lift_f el bv acc t0 =
                   let ls = create_fsymbol (id_clone vs.vs_name) tyl vs.vs_ty in
                   let t = fs_app ls (List.map t_var vl) vs.vs_ty in
                   let f = t_forall_close_merge vl (t_subst_single vs t f) in
-                  let id = id_derive (vs.vs_name.id_string ^ "_def") vs.vs_name 
+                  let id = id_derive (vs.vs_name.id_string ^ "_def") vs.vs_name
                   in
                   let ax = (create_prsymbol id, f) in
                   (create_param_decl ls :: abst, ax :: axml), t
       in
-      acc, t_label_copy t0 t
+      acc, t_attr_copy t0 t
+  | Teps _ ->
+      let vl,tr,t = t_open_lambda t0 in
+      let acc, t = lift_f el bv acc t in
+      let acc, tr = Lists.map_fold_left
+                      (Lists.map_fold_left (lift_f el bv))
+                      acc tr in
+      acc, t_attr_copy t0 (t_lambda vl tr t)
   | _ ->
       let acc, t = t_map_fold (lift_f el bv) acc t0 in
-      acc, t_label_copy t0 t
+      acc, t_attr_copy t0 t
 
 let rec lift_q el pol acc t0 =
   let binop = if pol then Tand else Timplies in
@@ -214,7 +230,7 @@ let rec lift_q el pol acc t0 =
     let t = List.fold_left (fun t (_, ax) -> t_binary binop ax t) t axml in
       (abst, []), t
   in
-  acc, t_label_copy t0 t 
+  acc, t_attr_copy t0 t
 
 let lift_l el (acc,dl) (ls,ld) =
   let vl, t, close = open_ls_defn_cb ld in
@@ -236,7 +252,7 @@ let lift_l el (acc,dl) (ls,ld) =
 let lift_d el d = match d.d_node with
   | Dlogic dl ->
       let (abst,axml), dl = List.fold_left (lift_l el) (([],[]),[]) dl in
-      if dl = [] then List.rev_append abst 
+      if dl = [] then List.rev_append abst
         (List.rev_map (fun (id, f) -> create_prop_decl Paxiom id f) axml) else
       let d = create_logic_decl (List.rev dl) in
       let add_ax (axml1, axml2) (id, f) =
@@ -250,12 +266,12 @@ let lift_d el d = match d.d_node with
   | Dprop (Pgoal, _, _) ->
       let (abst,axml), d = decl_map_fold (lift_q el false) ([],[]) d in
       List.rev_append abst
-        (List.fold_left (fun l (id, f) -> 
+        (List.fold_left (fun l (id, f) ->
                            (create_prop_decl Paxiom id f) :: l) [d] axml)
   | Dprop (Paxiom, _, _) ->
       let (abst,axml), d = decl_map_fold (lift_q el true) ([],[]) d in
       List.rev_append abst
-        (List.fold_left (fun l (id, f) -> 
+        (List.fold_left (fun l (id, f) ->
                            (create_prop_decl Paxiom id f) :: l) [d] axml)
   | _ ->
       let (abst,axml), d = decl_map_fold (lift_f el Mvs.empty) ([],[]) d in

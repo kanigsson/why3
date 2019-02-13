@@ -44,7 +44,10 @@ val common_options : spec_list
 val read_env_spec : unit -> Env.env * Whyconf.config * bool
 (** read_simple_spec also *)
 
-val read_session : string -> Session_itp.session * bool
+val read_session : string -> Session_itp.session * int option
+(** [read_session s] reads the session file [s] and returns a pair
+[(ses,shape_version)] where [ses] is the session structure (without
+any tasks) and [shape_version] indicates the shapes version, if any *)
 
 val read_update_session :
   allow_obsolete:bool -> Env.env ->
@@ -113,6 +116,9 @@ val get_used_provers_goal : Session_itp.session -> Session_itp.proofNodeID
 val get_transf_string : Session_itp.session -> Session_itp.transID -> string
 (** [get_transf_string s tr] concatenates the name of transformation [tr]
     in session [s] with its arguments *)
+
+val goal_full_name : Session_itp.session ->  Session_itp.proofNodeID -> string
+(** name of goal, taking account explanation *)
 
 val goal_depth : Session_itp.session -> Session_itp.proofNodeID -> int
 (** [goal_depth s g] returns the depth of the tree under goal

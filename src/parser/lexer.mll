@@ -17,6 +17,7 @@
     List.iter
       (fun (x,y) -> Hashtbl.add keywords x y)
       [
+        "alias", ALIAS;
         "as", AS;
         "axiom", AXIOM;
         "by", BY;
@@ -41,11 +42,11 @@
         "let", LET;
         "match", MATCH;
         "meta", META;
-        "namespace", NAMESPACE;
         "not", NOT;
+        "partial", PARTIAL;
         "predicate", PREDICATE;
-        "prop", PROP;
         "range", RANGE;
+        "scope", SCOPE;
         "so", SO;
         "then", THEN;
         "theory", THEORY;
@@ -59,8 +60,11 @@
         "any", ANY;
         "assert", ASSERT;
         "assume", ASSUME;
+        "at", AT;
         "begin", BEGIN;
+        "break", BREAK;
         "check", CHECK;
+        "continue", CONTINUE;
         "diverges", DIVERGES;
         "do", DO;
         "done", DONE;
@@ -71,16 +75,19 @@
         "fun", FUN;
         "ghost", GHOST;
         "invariant", INVARIANT;
-        "loop", LOOP;
-        "model", MODEL;
+        "label", LABEL;
         "module", MODULE;
         "mutable", MUTABLE;
+        "old", OLD;
         "private", PRIVATE;
+        "pure", PURE;
         "raise", RAISE;
         "raises", RAISES;
         "reads", READS;
         "rec", REC;
+        "ref", REF;
         "requires", REQUIRES;
+        "return", RETURN;
         "returns", RETURNS;
         "to", TO;
         "try", TRY;
@@ -92,18 +99,29 @@
 }
 
 let space = [' ' '\t' '\r']
-let lalpha = ['a'-'z' '_']
+let quote = '\''
+
+let bin     = ['0' '1']
+let oct     = ['0'-'7']
+let dec     = ['0'-'9']
+let hex     = ['0'-'9' 'a'-'f' 'A'-'F']
+
+let bin_sep = ['0' '1' '_']
+let oct_sep = ['0'-'7' '_']
+let dec_sep = ['0'-'9' '_']
+let hex_sep = ['0'-'9' 'a'-'f' 'A'-'F' '_']
+
+let lalpha = ['a'-'z']
 let ualpha = ['A'-'Z']
-let alpha = lalpha | ualpha
-let digit = ['0'-'9']
-let digit_or_us = ['0'-'9' '_']
-let alpha_no_us = ['a'-'z' 'A'-'Z']
-let suffix = (alpha_no_us | '\''* digit_or_us)* '\''*
-let lident = lalpha suffix
-let uident = ualpha suffix
-let lident_quote = lident ('\'' alpha_no_us suffix)+
-let uident_quote = uident ('\'' alpha_no_us suffix)+
-let hexadigit = ['0'-'9' 'a'-'f' 'A'-'F']
+let alpha  = ['a'-'z' 'A'-'Z']
+
+let suffix = (alpha | quote* dec_sep)* quote*
+let lident = ['a'-'z' '_'] suffix
+let uident = ['A'-'Z'] suffix
+
+let core_suffix = quote alpha suffix
+let core_lident = lident core_suffix+
+let core_uident = uident core_suffix+
 
 let op_char_1 = ['=' '<' '>' '~']
 let op_char_2 = ['+' '-']
@@ -116,59 +134,61 @@ let op_char_1234 = op_char_1 | op_char_234
 let op_char_pref = ['!' '?']
 
 rule token = parse
-  | "##" space* ("\"" ([^ '\010' '\013' '"' ]* as file) "\"")?
-    space* (digit+ as line) space* (digit+ as char) space* "##"
+  | "[##" space* ("\"" ([^ '\010' '\013' '"' ]* as file) "\"")?
+    space* (dec+ as line) space* (dec+ as char) space* "]"
       { Lexlib.update_loc lexbuf file (int_of_string line) (int_of_string char);
         token lexbuf }
-  | "#" space* "\"" ([^ '\010' '\013' '"' ]* as file) "\""
-    space* (digit+ as line) space* (digit+ as bchar) space*
-    (digit+ as echar) space* "#"
+  | "[#" space* "\"" ([^ '\010' '\013' '"' ]* as file) "\""
+    space* (dec+ as line) space* (dec+ as bchar) space*
+    (dec+ as echar) space* "]"
       { POSITION (Loc.user_position file (int_of_string line)
                  (int_of_string bchar) (int_of_string echar)) }
+  | "[@" space* ([^ ' ' '\n' ']']+ (' '+ [^ ' ' '\n' ']']+)* as lbl) space* ']'
+      { ATTRIBUTE lbl }
   | '\n'
-      { Lexlib.newline lexbuf; token lexbuf }
+      { Lexing.new_line lexbuf; token lexbuf }
   | space+
       { token lexbuf }
   | '_'
       { UNDERSCORE }
   | lident as id
       { try Hashtbl.find keywords id with Not_found -> LIDENT id }
-  | lident_quote as id
-      { LIDENT_QUOTE id }
+  | core_lident as id
+      { CORE_LIDENT id }
   | uident as id
       { UIDENT id }
-  | uident_quote as id
-      { UIDENT_QUOTE id }
-  | ['0'-'9'] ['0'-'9' '_']* as s
+  | core_uident as id
+      { CORE_UIDENT id }
+  | dec dec_sep* as s
       { INTEGER (Number.int_literal_dec (Lexlib.remove_underscores s)) }
-  | '0' ['x' 'X'] (['0'-'9' 'A'-'F' 'a'-'f']['0'-'9' 'A'-'F' 'a'-'f' '_']* as s)
+  | '0' ['x' 'X'] (hex hex_sep* as s)
       { INTEGER (Number.int_literal_hex (Lexlib.remove_underscores s)) }
-  | '0' ['o' 'O'] (['0'-'7'] ['0'-'7' '_']* as s)
+  | '0' ['o' 'O'] (oct oct_sep* as s)
       { INTEGER (Number.int_literal_oct (Lexlib.remove_underscores s)) }
-  | '0' ['b' 'B'] (['0'-'1'] ['0'-'1' '_']* as s)
+  | '0' ['b' 'B'] (bin bin_sep* as s)
       { INTEGER (Number.int_literal_bin (Lexlib.remove_underscores s)) }
-  | (digit+ as i) ("" as f) ['e' 'E'] (['-' '+']? digit+ as e)
-  | (digit+ as i) '.' (digit* as f) (['e' 'E'] (['-' '+']? digit+ as e))?
-  | (digit* as i) '.' (digit+ as f) (['e' 'E'] (['-' '+']? digit+ as e))?
+  | (dec+ as i) ".."
+      { Lexlib.backjump lexbuf 2; INTEGER (Number.int_literal_dec i) }
+  | '0' ['x' 'X'] (hex+ as i) ".."
+      { Lexlib.backjump lexbuf 2; INTEGER (Number.int_literal_hex i) }
+  | (dec+ as i)     ("" as f)    ['e' 'E'] (['-' '+']? dec+ as e)
+  | (dec+ as i) '.' (dec* as f) (['e' 'E'] (['-' '+']? dec+ as e))?
+  | (dec* as i) '.' (dec+ as f) (['e' 'E'] (['-' '+']? dec+ as e))?
       { REAL (Number.real_const_dec i f
           (Opt.map Lexlib.remove_leading_plus e)) }
-  | '0' ['x' 'X'] (hexadigit+ as i) ("" as f) ['p' 'P'] (['-' '+']? digit+ as e)
-  | '0' ['x' 'X'] (hexadigit+ as i) '.' (hexadigit* as f)
-        (['p' 'P'] (['-' '+']? digit+ as e))?
-  | '0' ['x' 'X'] (hexadigit* as i) '.' (hexadigit+ as f)
-        (['p' 'P'] (['-' '+']? digit+ as e))?
+  | '0' ['x' 'X'] (hex+ as i) ("" as f) ['p' 'P'] (['-' '+']? dec+ as e)
+  | '0' ['x' 'X'] (hex+ as i) '.' (hex* as f)
+        (['p' 'P'] (['-' '+']? dec+ as e))?
+  | '0' ['x' 'X'] (hex* as i) '.' (hex+ as f)
+        (['p' 'P'] (['-' '+']? dec+ as e))?
       { REAL (Number.real_const_hex i f
           (Opt.map Lexlib.remove_leading_plus e)) }
   | "(*)"
-      { LEFTPAR_STAR_RIGHTPAR }
+      { Lexlib.backjump lexbuf 2; LEFTPAR }
   | "(*"
       { Lexlib.comment lexbuf; token lexbuf }
-  | "~'" (lident as id)
-      { OPAQUE_QUOTE_LIDENT id }
-  | "'" (lident as id)
+  | "'" (lalpha suffix as id)
       { QUOTE_LIDENT id }
-  | "'" (uident as id)
-      { QUOTE_UIDENT id }
   | ","
       { COMMA }
   | "("
@@ -185,6 +205,8 @@ rule token = parse
       { SEMICOLON }
   | "->"
       { ARROW }
+  | "->'"
+      { Lexlib.backjump lexbuf 1; ARROW }
   | "<-"
       { LARROW }
   | "<->"
@@ -197,12 +219,12 @@ rule token = parse
       { AND }
   | "\\/"
       { OR }
-  | "\\"
-      { LAMBDA }
   | "."
       { DOT }
   | ".."
       { DOTDOT }
+  | "&"
+      { AMP }
   | "|"
       { BAR }
   | "<"
@@ -219,13 +241,19 @@ rule token = parse
       { LEFTSQ }
   | "]"
       { RIGHTSQ }
-  | op_char_pref op_char_4* as s
+  | "]" (quote+ as s)
+      { RIGHTSQ_QUOTE s }
+  | ")" ('\'' alpha suffix core_suffix* as s)
+      { RIGHTPAR_QUOTE s }
+  | ")" ('_' alpha suffix core_suffix* as s)
+      { RIGHTPAR_USCORE s }
+  | op_char_pref op_char_4* quote* as s
       { OPPREF s }
-  | op_char_1234* op_char_1 op_char_1234* as s
+  | op_char_1234* op_char_1 op_char_1234* quote* as s
       { OP1 s }
-  | op_char_234*  op_char_2 op_char_234*  as s
+  | op_char_234* op_char_2 op_char_234* quote* as s
       { OP2 s }
-  | op_char_34*   op_char_3 op_char_34*  as s
+  | op_char_34* op_char_3 op_char_34* quote* as s
       { OP3 s }
   | op_char_4+ as s
       { OP4 s }
@@ -238,31 +266,44 @@ rule token = parse
 
 {
 
-  let parse_term lb = Loc.with_location (Parser.term_eof token) lb
+  let debug = Debug.register_info_flag "print_modules"
+    ~desc:"Print@ program@ modules@ after@ typechecking."
 
-  let parse_term_list lb = Loc.with_location (Parser.term_comma_list_eof token) lb
+  let build_parsing_function entry lb = Loc.with_location (entry token) lb
 
-  let parse_qualid lb = Loc.with_location (Parser.qualid_eof token) lb
+  let parse_term = build_parsing_function Parser.term_eof
 
-  let parse_list_ident lb = Loc.with_location (Parser.ident_comma_list_eof token) lb
+  let parse_term_list = build_parsing_function Parser.term_comma_list_eof
 
-  let parse_list_qualid lb = Loc.with_location (Parser.qualid_comma_list_eof token) lb
+  let parse_qualid = build_parsing_function Parser.qualid_eof
 
-  let parse_logic_file env path lb =
-    open_file token (Lexing.from_string "") (Typing.open_file env path);
-    Loc.with_location (logic_file token) lb;
-    Typing.close_file ()
+  let parse_list_ident = build_parsing_function Parser.ident_comma_list_eof
 
-  let parse_program_file inc lb =
-    open_file token (Lexing.from_string "") inc;
-    Loc.with_location (program_file token) lb
+  let parse_list_qualid = build_parsing_function Parser.qualid_comma_list_eof
+
+  open Wstdlib
+  open Ident
+  open Theory
+  open Pmodule
 
   let read_channel env path file c =
     let lb = Lexing.from_channel c in
     Loc.set_file file lb;
-    parse_logic_file env path lb
+    Typing.open_file env path;
+    let mm =
+      try
+        build_parsing_function Parser.mlw_file lb
+      with
+        e -> ignore (Typing.discard_file ()); raise e
+    in
+    if path = [] && Debug.test_flag debug then begin
+      let print_m _ m = Format.eprintf "%a@\n@." print_module m in
+      let add_m _ m mm = Mid.add m.mod_theory.th_name m mm in
+      Mid.iter print_m (Mstr.fold add_m mm Mid.empty)
+    end;
+    mm
 
-  let () = Env.register_format Env.base_language "why" ["why"] read_channel
-    ~desc:"WhyML@ logical@ language"
+  let () = Env.register_format mlw_language "whyml" ["mlw";"why"] read_channel
+    ~desc:"WhyML@ programming@ and@ specification@ language"
 
 }

@@ -137,6 +137,65 @@ let decl_l  = gen_decl_l Task.add_decl
 let tdecl   = gen_decl   add_tdecl
 let tdecl_l = gen_decl_l add_tdecl
 
+type diff_decl =
+  | Goal_decl of Decl.decl
+  | Normal_decl of Decl.decl
+
+let decl_goal_l (fn: decl -> diff_decl list list) =
+  (* Same algo as for gen_decl_l so it can be generalized to tdecl *)
+  let fn = store_decl fn in
+  let is_goal d =
+    match d.d_node with
+    | Dprop (Pgoal, _, _) -> true
+    | _ -> false
+  in
+
+  let fn task (changed_goal, task_uc) =
+    match task.task_decl.td_node with
+    | Decl d when is_goal d ->
+        begin match changed_goal with
+        | None ->
+          List.map
+            (fun x -> List.fold_left
+                (fun (changed_goal, task_uc) typed_decl ->
+                   match typed_decl with
+                   | Goal_decl _ ->
+                     (* TODO: disallowing the creation of a new goal when
+                        analysing the goal itself: to be improved ? *)
+                     assert false
+                   | Normal_decl d -> (changed_goal, Task.add_decl task_uc d)
+                )
+                (changed_goal, task_uc)
+                x)
+            (fn d)
+        | Some new_goal ->
+            [changed_goal, Task.add_decl task_uc new_goal]
+        end
+    | Decl d ->
+      List.map
+        (fun x -> List.fold_left
+            (fun (changed_goal, task_uc) typed_decl ->
+               match typed_decl with
+               | Goal_decl d ->
+                   if changed_goal <> None then
+                     (* TODO: Unsure of soundness of this function when several
+                        goals are created in same branch. To be improved ? *)
+                     assert false
+                   else
+                     begin
+                       assert (is_goal d);
+                       (Some d, task_uc)
+                     end
+               | Normal_decl d -> (changed_goal, Task.add_decl task_uc d))
+            (changed_goal, task_uc)
+            x
+        ) (fn d)
+    | _ ->
+        [changed_goal, add_tdecl task_uc task.task_decl]
+  in
+
+  fold_map_l fn None
+
 let apply_to_goal fn d = match d.d_node with
   | Dprop (Pgoal,pr,f) -> fn pr f
   | _ -> assert false
@@ -182,8 +241,9 @@ let on_meta_tds t fn =
   let fn = Wtds.memoize 17 fn in
   fun task -> fn (find_meta_tds task t) task
 
-let on_theory th fn =
+let on_cloned_theory th fn =
   let add td acc = match td.td_node with
+    | Use _ -> acc
     | Clone (_,sm) -> sm::acc
     | _ -> assert false
   in
@@ -197,8 +257,12 @@ let on_meta t fn =
   on_meta_tds t (fun tds -> fn (Stdecl.fold add tds.tds_set []))
 
 let on_used_theory th fn =
-  let td = create_null_clone th in
-  on_theory_tds th (fun tds -> fn (Stdecl.mem td tds.tds_set))
+  let check td = match td.td_node with
+    | Use _ -> true
+    | Clone _ -> false
+    | _ -> assert false
+  in
+  on_theory_tds th (fun tds -> fn (Stdecl.exists check tds.tds_set))
 
 let on_meta_excl t fn =
   if not t.meta_excl then raise (NotExclusiveMeta t);
@@ -286,7 +350,6 @@ let create_debugging_trans trans_name (tran : Task.task trans) =
     print_task_goal t2;
     Debug.dprintf debug "@.@.";
     t2;
-
   end in
   store new_trans
 
@@ -351,6 +414,7 @@ let list_transforms_l () =
 type naming_table = {
     namespace : namespace;
     known_map : known_map;
+    coercion : Coercion.t;
     printer : Ident.ident_printer;
     aprinter : Ident.ident_printer;
   }
@@ -463,18 +527,18 @@ let on_flag_find m ft s = try Hstr.find ft s with
 let on_flag_gen m ft def_name def arg =
   on_meta_excl m (fun alo ->
     let t, tr_name = match alo with
-      | None -> def, Printf.sprintf "%s %s" m.meta_name def_name
+      | None -> def, Printf.sprintf "%s%s" m.meta_name def_name
       | Some [MAstr s] ->
-          on_flag_find m ft s, Printf.sprintf "%s : %s" m.meta_name s
+          on_flag_find m ft s, Printf.sprintf "%s:%s" m.meta_name s
       | _ -> raise (IllegalFlagTrans m)
     in
     named tr_name (t arg))
 
-let on_flag m ft def arg =
-  let tdef x = on_flag_find m ft def x in
-  on_flag_gen m ft (Printf.sprintf ": %s" def) tdef arg
+let on_flag m ft def_name arg =
+  let def x = on_flag_find m ft def_name x in
+  on_flag_gen m ft (Printf.sprintf ":%s" def_name) def arg
 
-let on_flag_t m ft def arg = on_flag_gen m ft "(default)" def arg
+let on_flag_t m ft def arg = on_flag_gen m ft " (default)" def arg
 
 let () = Exn_printer.register (fun fmt exn -> match exn with
   | KnownTrans s ->

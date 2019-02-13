@@ -16,8 +16,6 @@ let flag = Debug.register_flag "track_symbol_use"
 
 let () = Debug.unset_flag flag (* make sure it is unset by default *)
 
-let dummy_id = id_register (id_fresh "dummy")
-
 type def_use = Def | Use
 
 let glob = Hashtbl.create 5003
@@ -29,11 +27,11 @@ let add loc idk =
   let k = key loc in
   if not (Hashtbl.mem glob k) then Hashtbl.add glob k idk
 
-let def id =
-  Opt.iter (fun loc -> add loc (id, Def)) id.id_loc
+let def ~kind id =
+  Opt.iter (fun loc -> add loc (id, Def, kind)) id.id_loc
 
-let use loc id =
-  add loc (id, Use)
+let use ~kind loc id =
+  add loc (id, Use, kind)
 
 let find loc =
   Hashtbl.find glob (key loc)

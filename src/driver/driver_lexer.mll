@@ -24,6 +24,7 @@
         "remove", REMOVE;
         "meta", META;
         "prelude", PRELUDE;
+        "interface", INTERFACE;
         "printer", PRINTER;
 	"steps", STEPS;
 	"model_parser", MODEL_PARSER;
@@ -49,27 +50,27 @@
         "module", MODULE;
         "exception", EXCEPTION;
         "val", VAL;
-        "converter", CONVERTER;
         "literal", LITERAL;
+        "use", USE;
       ]
-
 }
 
 let space = [' ' '\t' '\r']
 let alpha = ['a'-'z' 'A'-'Z' '_']
 let digit = ['0'-'9']
-let ident = alpha (alpha | digit | '\'')*
+let idsuf = alpha | digit | '\''
+let ident = alpha idsuf*
 
-let op_char = ['=' '<' '>' '~' '+' '-' '*' '/' '%'
+let op_char = ['=' '<' '>' '~' '+' '-' '*' '/' '%' '\\'
                '!' '$' '&' '?' '@' '^' '.' ':' '|' '#']
 
 rule token = parse
   | '\n'
-      { Lexlib.newline lexbuf; token lexbuf }
+      { Lexing.new_line lexbuf; token lexbuf }
   | space+
       { token lexbuf }
   | "(*)"
-      { LEFTPAR_STAR_RIGHTPAR }
+      { Lexlib.backjump lexbuf 2; LEFTPAR }
   | "(*"
       { Lexlib.comment lexbuf; token lexbuf }
   | '_'
@@ -90,15 +91,21 @@ rule token = parse
       { RIGHTPAR }
   | "."
       { DOT }
+  | ".."
+      { DOTDOT }
   | ","
       { COMMA }
   | "'"
       { QUOTE }
-  | op_char+ as op
+  | "]" ("'"+ as s)
+      { RIGHTSQ_QUOTE s }
+  | ")" (['\'' '_'] ['a'-'z' 'A'-'Z'] idsuf* as s)
+      { RIGHTPAR_QUOTE s }
+  | op_char+ "'"* as op
       { OPERATOR op }
-  | "\""
+  | '"'
       { STRING (Lexlib.string lexbuf) }
-  | "import" space*  "\""
+  | "import" space* '"'
       { INPUT (Lexlib.string lexbuf) }
   | eof
       { EOF }
@@ -116,7 +123,7 @@ rule token = parse
       match tok with
         | INPUT filename ->
           let dirname = Filename.dirname lexbuf.lex_curr_p.pos_fname in
-          let filename = Sysutil.absolutize_path dirname [filename] in
+          let filename = Sysutil.concat dirname filename in
           Stack.push (input_lexbuf filename) s;
           multifile lex_dumb
         | EOF -> ignore (Stack.pop s);

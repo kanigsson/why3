@@ -30,6 +30,9 @@ why3_vc even_2k by simp
 
 why3_vc odd_2k1 by simp
 
+why3_vc even_mod2
+  by (auto simp add: even_def cmod_def sgn_if minus_equation_iff [of n])
+
 why3_end
 
 
@@ -37,7 +40,8 @@ section {* Divisibility *}
 
 why3_open "number/Divisibility.xml"
 
-why3_vc divides_def by (simp add: dvd_def mult.commute)
+why3_vc divides_def
+  by (auto simp add: cmod_def sgn_if minus_equation_iff [of n])
 
 why3_vc divides_refl by simp
 
@@ -101,6 +105,9 @@ why3_vc divides_mod_computer
 why3_vc even_divides ..
 
 why3_vc odd_divides ..
+
+why3_vc divides_spec
+  by (simp add: dvd_def mult.commute)
 
 why3_end
 

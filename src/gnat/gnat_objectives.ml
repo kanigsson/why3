@@ -309,13 +309,15 @@ let init () =
    session *)
 let init_cont () =
   let session_dir = get_session_dir () in
-  let is_new_session, (session, use_shapes) =
+  (* Shape version is always None for gnatwhy3 because we don't use shapes *)
+  let is_new_session, (session, _shape_version) =
     if not Gnat_config.force && Sys.file_exists session_dir then
       false, Session_itp.load_session session_dir
     else begin
       if not (Sys.file_exists session_dir) then Unix.mkdir session_dir 0o700;
-      true, (Session_itp.empty_session session_dir, false)
-    end in
+      true, (Session_itp.empty_session session_dir, None)
+    end
+  in
   let c = Controller_itp.create_controller Gnat_config.config Gnat_config.env session in
   if is_new_session || not (has_file session) then begin
     try
@@ -352,7 +354,7 @@ let init_cont () =
            Session_itp.rename_file ses abs_file Gnat_config.filename in
          ());
       try
-        let (_ : bool), (_ : bool) = Controller_itp.reload_files c ~use_shapes in
+        let (_ : bool), (_ : bool) = Controller_itp.reload_files c ~shape_version:None in
         c
       with
       | Controller_itp.Errors_list l ->
@@ -474,6 +476,7 @@ let further_split (c: Controller_itp.controller) (goal: goal_id) =
            end
          | Controller_itp.TSscheduled  -> ()
          | Controller_itp.TSfailed _ -> ()
+         | Controller_itp.TSfatal _ -> ()
        in
        (* Pass empty function for notification as there is no IDE to update *)
        C.schedule_transformation c goal trans [] ~callback:callback
@@ -559,8 +562,16 @@ let iter_main_goals s fu =
     Session_itp.Hfile.fold (fun _ (x:Session_itp.file) (acc: Session_itp.theory list) ->
                         (Session_itp.file_theories x) @ acc)
     files [] in
+  (* We filter detached goals (they don't have task) *)
+  let filter_detached goal =
+    let goal = Session_itp.APn goal in
+    not (Session_itp.is_detached s goal)
+  in
   let main_goals =
-    List.fold_left (fun acc th -> (Session_itp.theory_goals th) @ acc) [] theories in
+    List.fold_left (fun acc th ->
+        List.filter filter_detached (Session_itp.theory_goals th) @ acc)
+      [] theories
+  in
   List.iter fu main_goals
 
 exception Prover_Found of Whyconf.prover
@@ -628,13 +639,13 @@ exception Found_loc of Gnat_loc.loc
 let extract_sloc (s: Session_itp.session) (main_goal: goal_id) =
    let task = Session_itp.get_task s main_goal in
    let goal_ident = (Task.task_goal task).Decl.pr_name in
-   let label_set = goal_ident.Ident.id_label in
+   let attr_set = goal_ident.Ident.id_attrs in
    try
-      Ident.Slab.iter (fun lab ->
-        match Gnat_expl.read_label lab.Ident.lab_string with
+      Ident.Sattr.iter (fun attr ->
+        match Gnat_expl.read_label attr.Ident.attr_string with
         | Some Gnat_expl.Gp_Subp loc -> raise (Found_loc loc)
         | _ -> ()
-      ) label_set;
+      ) attr_set;
       Gnat_util.abort_with_message ~internal:true
         (Pp.sprintf "could not find source location for subprogram %s"
         goal_ident.Ident.id_string)
@@ -664,11 +675,11 @@ let iter_subps c f =
 let matches_subp_filter s subp =
    match Gnat_config.limit_subp with
    | None -> true
-   | Some lab ->
+   | Some attr ->
          let task = Session_itp.get_task s subp.subp_goal in
          let goal_ident = (Task.task_goal task).Decl.pr_name in
-         let label_set = goal_ident.Ident.id_label in
-         Ident.Slab.mem lab label_set
+         let attr_set = goal_ident.Ident.id_attrs in
+         Ident.Sattr.mem attr attr_set
 
 module Save_VCs = struct
 
@@ -791,7 +802,7 @@ module Save_VCs = struct
   let compute_trace s =
     let rec compute_trace acc f =
       let acc = Term.t_fold compute_trace acc f in
-      match Gnat_expl.extract_sloc f.Term.t_label with
+      match Gnat_expl.extract_sloc f.Term.t_attrs with
       (* it should be enough to look at the "sloc"s here, and not take into
          account the explanations. *)
       | Some loc -> Gnat_loc.S.add loc acc

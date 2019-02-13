@@ -18,6 +18,9 @@ open Args_wrapper
 (** This file contains transformations with arguments that adds/removes
     declarations from the context *)
 
+(* Explanation for assert and cut *)
+let assert_expl = "asserted formula"
+
 (* From task [delta |- G] , build the tasks [delta, t | - G] and [delta] |- t] *)
 let cut t name =
   let name =
@@ -26,7 +29,7 @@ let cut t name =
     | None -> "h"
   in
   let h = Decl.create_prsymbol (gen_ident name) in
-  let g_t = Decl.create_prop_decl Decl.Pgoal h t in
+  let g_t = create_goal ~expl:assert_expl h t in
   let h_t = Decl.create_prop_decl Decl.Paxiom h t in
   let goal_cut = Trans.goal (fun _ _ -> [g_t]) in
   let goal = Trans.add_decls [h_t] in
@@ -41,7 +44,7 @@ let assert_tac t name =
     | None -> "h"
   in
   let h = Decl.create_prsymbol (gen_ident name) in
-  let g_t = Decl.create_prop_decl Decl.Pgoal h t in
+  let g_t = create_goal ~expl:assert_expl h t in
   let h_t = Decl.create_prop_decl Decl.Paxiom h t in
   let goal_cut = Trans.goal (fun _ _ -> [g_t]) in
   let goal = Trans.add_decls [h_t] in
@@ -128,7 +131,11 @@ let clear_but (l: prsymbol list) =
   Trans.bind get_local (clear_but l)
 
 let use_th th =
-  Trans.add_tdecls [Theory.create_use th]
+  Trans.store Task.(function
+  | Some { task_decl = { Theory.td_node = Theory.Decl d }; task_prev = prev } ->
+      add_decl (use_export prev th) d
+  | _ -> assert false)
+  (*Trans.add_tdecls [Theory.create_use th]*)
 
 (* Equivalent of Coq pose (x := term). Adds a new constant of appropriate type
    and an hypothesis x = term.

@@ -31,11 +31,11 @@ type th_rule =
   | Rsyntaxts  of qualid * string * bool
   | Rsyntaxfs  of qualid * string * bool
   | Rsyntaxps  of qualid * string * bool
-  | Rconverter of qualid * string * bool
   | Rliteral   of qualid * string * bool
   | Rremovepr  of qualid
   | Rremoveall
   | Rmeta      of string * metarg list
+  | Ruse       of qualid
 
 type theory_rules = {
   thr_name  : qualid;
@@ -44,6 +44,7 @@ type theory_rules = {
 
 type mo_rule =
   | MRtheory    of th_rule
+  | MRinterface of string
   | MRexception of qualid * string
   | MRval       of qualid * string
 
@@ -68,7 +69,6 @@ type global =
   | ExitCodeValid of int
   | ExitCodeInvalid of int
   | ExitCodeTimeout of int
-  | ExitCodeOutOfMemory of int
   | ExitCodeStepLimitExceeded of int
   | ExitCodeUnknown of int * string
   | ExitCodeFailure of int * string

@@ -106,69 +106,94 @@ type descent =
   | Equal of int
   | Unknown
 
+type call_set = (ident * descent array) Hid.t
+type vs_graph = descent Mvs.t list
+
+let create_call_set () = Hid.create 5
+
+let create_vs_graph vl =
+  let i = ref (-1) in
+  let add vm v = incr i; Mvs.add v (Equal !i) vm in
+  [List.fold_left add Mvs.empty vl]
+
+(* TODO: can we handle projections somehow? *)
+let register_call cgr caller vsg callee tl =
+  let call vm =
+    let describe t = match t.t_node with
+      | Tvar v -> Mvs.find_def Unknown v vm
+      | _ -> Unknown in
+    let dl = List.map describe tl in
+    Hid.add cgr callee (caller, Array.of_list dl) in
+  List.iter call vsg
+
+let vs_graph_drop vsg u = List.rev_map (Mvs.remove u) vsg
+
+(* TODO: can we handle projections somehow? *)
+let vs_graph_let vsg t u = match t.t_node with
+  | Tvar v ->
+      let add vm = try Mvs.add u (Mvs.find v vm) vm
+                  with Not_found -> Mvs.remove u vm in
+      List.rev_map add vsg
+  | _ ->
+      vs_graph_drop vsg u
+
 let rec match_var link acc p = match p.pat_node with
   | Pwild -> acc
   | Pvar u -> List.rev_map (Mvs.add u link) acc
   | Pas (p,u) -> List.rev_map (Mvs.add u link) (match_var link acc p)
   | Por (p1,p2) ->
-      let acc1 = match_var link acc p1 in
-      let acc2 = match_var link acc p2 in
-      List.rev_append acc1 acc2
+      List.rev_append (match_var link acc p1) (match_var link acc p2)
   | Papp _ ->
       let link = match link with
         | Unknown -> Unknown
         | Equal i -> Less i
-        | Less i  -> Less i
-      in
+        | Less i  -> Less i in
       let join u = Mvs.add u link in
       List.rev_map (Svs.fold join p.pat_vars) acc
 
 let rec match_term vm t acc p = match t.t_node, p.pat_node with
   | _, Pwild -> acc
-  | Tvar v, _ when not (Mvs.mem v vm) -> acc
-  | Tvar v, _ -> match_var (Mvs.find v vm) acc p
-  | Tapp _, Pvar _ -> acc
-  | Tapp _, Pas (p,_) -> match_term vm t acc p
+  | Tvar v, _ when Mvs.mem v vm ->
+      match_var (Mvs.find v vm) acc p
+  | Tapp _, Pvar u ->
+      vs_graph_drop acc u
+  | Tapp _, Pas (p,u) ->
+      match_term vm t (vs_graph_drop acc u) p
   | Tapp _, Por (p1,p2) ->
-      let acc1 = match_term vm t acc p1 in
-      let acc2 = match_term vm t acc p2 in
-      List.rev_append acc1 acc2
+      List.rev_append (match_term vm t acc p1) (match_term vm t acc p2)
   | Tapp (c1,tl), Papp (c2,pl) when ls_equal c1 c2 ->
       let down l t p = match_term vm t l p in
       List.fold_left2 down acc tl pl
-  | _,_ -> acc
+  | _,_ ->
+      List.rev_map (fun vm -> Mvs.set_diff vm p.pat_vars) acc
 
-let build_call_graph cgr syms ls =
-  let call vm s tl =
-    let desc t = match t.t_node with
-      | Tvar v -> Mvs.find_def Unknown v vm
-      | _ -> Unknown
-    in
-    Hls.add cgr s (ls, Array.of_list (List.map desc tl))
-  in
+let vs_graph_pat vsg t p =
+  let add acc vm = List.rev_append (match_term vm t [vm] p) acc in
+  List.fold_left add [] vsg
+
+let build_call_graph cgr syms ls (vl,e) =
   let rec term vm () t = match t.t_node with
     | Tapp (s,tl) when Mls.mem s syms ->
-        t_fold (term vm) () t; call vm s tl
-    | Tlet ({t_node = Tvar v}, b) when Mvs.mem v vm ->
+        t_fold (term vm) () t;
+        register_call cgr ls.ls_name vm s.ls_name tl
+    | Tlet (t,b) ->
+        term vm () t;
         let u,e = t_open_bound b in
-        term (Mvs.add u (Mvs.find v vm) vm) () e
-    | Tcase (e,bl) ->
-        term vm () e; List.iter (fun b ->
-          let p,t = t_open_branch b in
-          let vml = match_term vm e [vm] p in
-          List.iter (fun vm -> term vm () t) vml) bl
-    | Tquant (_,b) ->
+        term (vs_graph_let vm t u) () e
+    | Tcase (t,bl) ->
+        term vm () t;
+        List.iter (fun b ->
+          let p,e = t_open_branch b in
+          term (vs_graph_pat vm t p) () e) bl
+    | Tquant (_,b) -> (* ignore triggers *)
         let _,_,f = t_open_quant b in term vm () f
-    | _ -> t_fold (term vm) () t
+    | _ ->
+        t_fold (term vm) () t
   in
-  fun (vl,e) ->
-    let i = ref (-1) in
-    let add vm v = incr i; Mvs.add v (Equal !i) vm in
-    let vm = List.fold_left add Mvs.empty vl in
-    term vm () e
+  term (create_vs_graph vl) () e
 
-let build_call_list cgr ls =
-  let htb = Hls.create 5 in
+let build_call_list cgr id =
+  let htb = Hid.create 5 in
   let local v = Array.mapi (fun i -> function
     | (Less j) as d when i = j -> d
     | (Equal j) as d when i = j -> d
@@ -186,7 +211,7 @@ let build_call_list cgr ls =
     try Array.iteri test v1; true with Not_found -> false
   in
   let subsumed s c =
-    List.exists (subsumes c) (Hls.find_all htb s)
+    List.exists (subsumes c) (Hid.find_all htb s)
   in
   let multiply v1 v2 =
     let to_less = function
@@ -200,21 +225,20 @@ let build_call_list cgr ls =
       | Less i -> to_less (Array.get v2 i)) v1
   in
   let resolve s c =
-    Hls.add htb s c;
+    Hid.add htb s c;
     let mult (s,v) = (s, multiply c v) in
-    List.rev_map mult (Hls.find_all cgr s)
+    List.rev_map mult (Hid.find_all cgr s)
   in
   let rec add_call lc = function
     | [] -> lc
-    | (s,c)::r when ls_equal ls s -> add_call (local c :: lc) r
+    | (s,c)::r when id_equal id s -> add_call (local c :: lc) r
     | (s,c)::r when subsumed s c -> add_call lc r
     | (s,c)::r -> add_call lc (List.rev_append (resolve s c) r)
   in
-  add_call [] (Hls.find_all cgr ls)
+  add_call [] (Hid.find_all cgr id)
 
-exception NoTerminationProof of lsymbol
-
-let check_call_list ls cl =
+let find_variant exn cgr id =
+  let cl = build_call_list cgr id in
   let add d1 d2 = match d1, d2 with
     | Unknown, _ -> d1
     | _, Unknown -> d2
@@ -234,7 +258,7 @@ let check_call_list ls cl =
         let find l = function Less i -> i :: l | _ -> l in
         let res = Array.fold_left find [] p in
         (* eliminate the decreasing calls *)
-        if res = [] then raise (NoTerminationProof ls);
+        if res = [] then raise exn;
         let test a =
           List.for_all (fun i -> Array.get a i <> Less i) res
         in
@@ -242,15 +266,15 @@ let check_call_list ls cl =
   in
   check [] cl
 
+exception NoTerminationProof of lsymbol
+
 let check_termination ldl =
-  let cgr = Hls.create 5 in
+  let cgr = create_call_set () in
   let add acc (ls,ld) = Mls.add ls (open_ls_defn ld) acc in
   let syms = List.fold_left add Mls.empty ldl in
   Mls.iter (build_call_graph cgr syms) syms;
   let check ls _ =
-    let cl = build_call_list cgr ls in
-    check_call_list ls cl
-  in
+    find_variant (NoTerminationProof ls) cgr ls.ls_name in
   let res = Mls.mapi check syms in
   List.map (fun (ls,(_,f,_)) -> (ls,(ls,f,Mls.find ls res))) ldl
 
@@ -288,7 +312,6 @@ type prop_kind =
   | Plemma    (* prove, use as a premise *)
   | Paxiom    (* do not prove, use as a premise *)
   | Pgoal     (* prove, do not use as a premise *)
-  | Pskip     (* do not prove, do not use as a premise *)
 
 type prop_decl = prop_kind * prsymbol * term
 
@@ -352,7 +375,7 @@ module Hsdecl = Hashcons.Make (struct
   let hs_ind (ps,al) = Hashcons.combine_list hs_prop (ls_hash ps) al
 
   let hs_kind = function
-    | Plemma -> 11 | Paxiom -> 13 | Pgoal  -> 17 | Pskip  -> 19
+    | Plemma -> 11 | Paxiom -> 13 | Pgoal -> 17
 
   let hash d = match d.d_node with
     | Dtype  s -> ts_hash s
@@ -395,8 +418,8 @@ exception BadLogicDecl of lsymbol * lsymbol
 exception BadConstructor of lsymbol
 
 exception BadRecordField of lsymbol
-exception RecordFieldMissing of lsymbol * lsymbol
-exception DuplicateRecordField of lsymbol * lsymbol
+exception RecordFieldMissing of lsymbol
+exception DuplicateRecordField of lsymbol
 
 exception EmptyDecl
 exception EmptyAlgDecl of tysymbol
@@ -421,21 +444,21 @@ let create_data_decl tdl =
   if tdl = [] then raise EmptyDecl;
   let add s (ts,_) = Sts.add ts s in
   let tss = List.fold_left add Sts.empty tdl in
-  let check_proj cs tyv s tya ls = match ls with
+  let check_proj tyv s tya ls = match ls with
     | None -> s
     | Some ({ls_args = [ptyv]; ls_value = Some ptya; ls_constr = 0} as ls) ->
         ty_equal_check tyv ptyv;
         ty_equal_check tya ptya;
-        Sls.add_new (DuplicateRecordField (cs,ls)) ls s
+        Sls.add_new (DuplicateRecordField ls) ls s
     | Some ls -> raise (BadRecordField ls)
   in
   let check_constr tys ty cll pjs (syms,news) (fs,pl) =
     ty_equal_check ty (Opt.get_exn (BadConstructor fs) fs.ls_value);
     let fs_pjs =
-      try List.fold_left2 (check_proj fs ty) Sls.empty fs.ls_args pl
+      try List.fold_left2 (check_proj ty) Sls.empty fs.ls_args pl
       with Invalid_argument _ -> raise (BadConstructor fs) in
     if not (Sls.equal pjs fs_pjs) then
-      raise (RecordFieldMissing (fs, Sls.choose (Sls.diff pjs fs_pjs)));
+      raise (RecordFieldMissing (Sls.choose (Sls.diff pjs fs_pjs)));
     if fs.ls_constr <> cll then raise (BadConstructor fs);
     let vs = ty_freevars Stv.empty ty in
     let rec check seen ty = match ty.ty_node with
@@ -456,8 +479,8 @@ let create_data_decl tdl =
     if cl = [] then raise (EmptyAlgDecl ts);
     if ts.ts_def <> NoDef then raise (IllegalTypeAlias ts);
     let news = news_id news ts.ts_name in
-    let pjs = List.fold_left (fun s (_,pl) -> List.fold_left
-      (Opt.fold (fun s ls -> Sls.add ls s)) s pl) Sls.empty cl in
+    let pjs = List.fold_left (fun s (_,pl) ->
+      List.fold_left (Opt.fold Sls.add_left) s pl) Sls.empty cl in
     let news = Sls.fold (fun pj s -> news_id s pj.ls_name) pjs news in
     let ty = ty_app ts (List.map ty_var ts.ts_args) in
     List.fold_left (check_constr ts ty cll pjs) (syms,news) cl
@@ -718,7 +741,6 @@ let check_foundness kn d =
 let rec ts_extract_pos kn sts ts =
   assert (not (is_alias_type_def ts.ts_def));
   if ts_equal ts ts_func then [false;true] else
-  if ts_equal ts ts_pred then [false] else
   if Sts.mem ts sts then List.map Util.ttrue ts.ts_args else
   match find_constructors kn ts with
     | [] ->
@@ -746,9 +768,8 @@ let check_positivity kn d = match d.d_node with
           | Tyapp (ts,tl) ->
               let check pos ty =
                 if pos then check_ty ty else
-                if ty_s_any (fun ts -> Sts.mem ts tss) ty
-                then raise (NonPositiveTypeDecl (tys,cs,ty))
-              in
+                if ty_s_any (Sts.contains tss) ty then
+                  raise (NonPositiveTypeDecl (tys,cs,ty)) in
               List.iter2 check (ts_extract_pos kn Sts.empty ts) tl
         in
         List.iter check_ty cs.ls_args
@@ -778,15 +799,15 @@ let parse_record kn fll =
   let cs, pjl = match find_constructors kn ts with
     | [cs,pjl] -> cs, List.map (Opt.get_exn (BadRecordField fs)) pjl
     | _ -> raise (BadRecordField fs) in
-  let pjs = List.fold_left (fun s pj -> Sls.add pj s) Sls.empty pjl in
+  let pjs = Sls.of_list pjl in
   let flm = List.fold_left (fun m (pj,v) ->
     if not (Sls.mem pj pjs) then raise (BadRecordField pj) else
-    Mls.add_new (DuplicateRecordField (cs,pj)) pj v m) Mls.empty fll in
+    Mls.add_new (DuplicateRecordField pj) pj v m) Mls.empty fll in
   cs,pjl,flm
 
 let make_record kn fll ty =
   let cs,pjl,flm = parse_record kn fll in
-  let get_arg pj = Mls.find_exn (RecordFieldMissing (cs,pj)) pj flm in
+  let get_arg pj = Mls.find_exn (RecordFieldMissing pj) pj flm in
   fs_app cs (List.map get_arg pjl) ty
 
 let make_record_update kn t fll ty =
