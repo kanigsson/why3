@@ -27,12 +27,14 @@ jobs:
         if: runner.os != 'Windows'
         with:
           ocaml-version: ${{ matrix.ocaml-version }}
+          opam-disable-sandboxing: true
 
       - name: Use Setup OCaml v1 ${{ matrix.ocaml-version }}
         uses: avsm/setup-ocaml@v1
         if: runner.os == 'Windows'
         with:
           ocaml-version: ${{ matrix.ocaml-version }}
+          opam-disable-sandboxing: true
 
       - name: opam install depext
         run: opam depext camlzip zarith re seq why3
