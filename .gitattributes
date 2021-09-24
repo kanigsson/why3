@@ -1,4 +1,5 @@
 -text
+configure binary
 * no-precommit-check
 /examples/in_progress/ export-ignore
 /examples/hoare_logic/draft/ export-ignore
