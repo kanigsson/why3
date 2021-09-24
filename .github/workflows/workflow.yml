@@ -35,11 +35,11 @@ jobs:
           ocaml-version: ${{ matrix.ocaml-version }}
 
       - name: opam install depext
-        run: opam depext zarith re seq why3
+        run: opam depext camlzip zarith re seq why3
 
       - run: opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith
 
-      - run: opam exec -- ./configure --prefix=localinstall --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml
+      - run: opam exec -- ./configure --prefix=/tmp/why3install --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml
       - run: opam exec -- make
       - run: opam exec -- make install_spark2014
 
@@ -47,4 +47,4 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: why3_${{matrix.os}}
-          path: localinstall
+          path: /tmp/why3install
