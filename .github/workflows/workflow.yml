@@ -35,7 +35,7 @@ jobs:
           ocaml-version: ${{ matrix.ocaml-version }}
 
       - name: opam install depext
-        run: opam depext opam/why3.opam
+        run: opam depext zarith re seq why3
 
       - run: opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith
 
