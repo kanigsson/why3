@@ -127,7 +127,7 @@ BFLAGS = $(FLAGS)
 
 ifeq (@enable_ocamlfind@,yes)
 FLAGS += $(addprefix -package ,$(EXTPKGS))
-OLINKFLAGS += -linkpkg -linkall
+OLINKFLAGS += -linkpkg -linkall -ccopt -static
 BLINKFLAGS += -linkpkg -linkall
 else
 FLAGS += $(EXTINCLUDES)
