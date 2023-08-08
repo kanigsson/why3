@@ -28,15 +28,6 @@ jobs:
       - name: Checkout tree
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
-      - name: Set Staging env var
-        run: |
-          python cwd.py >> $GITHUB_ENV
-
       - name: Check value of staging var
         run: echo ${{env.STAGING_AREA}}
 
@@ -44,6 +35,15 @@ jobs:
         uses: ocaml/setup-ocaml@v2
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Set Staging env var
+        run: |
+          opam exec -- python cwd.py >> $GITHUB_ENV
 
       - name: Setup Packages
         run: |
