@@ -46,7 +46,7 @@ jobs:
         if: ${{matrix.os}} != 'windows-latest'
         run: | "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
 
-      - run: opam exec -- ./configure --prefix="'${{github.workspace}}/staging'" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
+      - run: opam exec -- ./configure --prefix="${{env.STAGING_AREA}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
       - run: opam exec -- make
 
