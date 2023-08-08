@@ -35,7 +35,7 @@ jobs:
 
       - run: opam depext camlzip zarith re seq why3
       - run: opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
-      - run: opam exec -- ./configure --prefix="${GITHUB_WORKSPACE}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
+      - run: opam exec -- ./configure --prefix="${{github.workspace}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
       - run: opam exec -- make
 
