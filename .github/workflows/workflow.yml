@@ -28,19 +28,6 @@ jobs:
       - name: Checkout tree
         uses: actions/checkout@v3
 
-      - name: Set Staging env var (Windows)
-        if: ${{matrix.os == 'windows-latest' }}
-        run: |
-          echo "STAGING_AREA=${{github.workspace}} -replace '\\' '/'" >> $GITHUB_ENV
-
-      - name: Set Staging env var (non-Windows)
-        if: ${{matrix.os != 'windows-latest' }}
-        run: |
-          echo "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
-
-      - name: Check value of staging var
-        run: echo ${{env.STAGING_AREA}}
-
       - name: Set-up OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
         with:
@@ -51,7 +38,7 @@ jobs:
           opam depext camlzip zarith re seq why3
           opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
 
-      - run: opam exec -- ./configure --prefix="${{env.STAGING_AREA}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
+      - run: opam exec -- ./configure --prefix=/tmp/why3install --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
       - run: opam exec -- make
 
@@ -61,4 +48,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: why3pack-${{matrix.os}}
-          path: staging
+          path: /tmp/why3install
