@@ -39,7 +39,7 @@ jobs:
           echo "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
 
       - name: Check value of staging var
-        run: echo {{env.STAGING_AREA}}
+        run: echo "{{env.STAGING_AREA}}"
 
       - name: Set-up OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
