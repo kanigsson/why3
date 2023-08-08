@@ -28,9 +28,6 @@ jobs:
       - name: Checkout tree
         uses: actions/checkout@v3
 
-      - name: Check value of staging var
-        run: echo ${{env.STAGING_AREA}}
-
       - name: Set-up OCaml ${{ matrix.ocaml-compiler }}
         uses: ocaml/setup-ocaml@v2
         with:
@@ -44,6 +41,9 @@ jobs:
       - name: Set Staging env var
         run: |
           opam exec -- python cwd.py >> $GITHUB_ENV
+
+      - name: Check value of staging var
+        run: echo ${{env.STAGING_AREA}}
 
       - name: Setup Packages
         run: |
