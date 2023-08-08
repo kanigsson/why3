@@ -53,10 +53,10 @@ jobs:
 
       - name: Setup Packages
         run: |
-          opam depext camlzip zarith re seq why3
-          opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
+          opam depext zarith re seq why3
+          opam install dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
 
-      - run: opam exec -- ./configure --prefix="${{env.STAGING_AREA}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
+      - run: opam exec -- ./configure --prefix="${{env.STAGING_AREA}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml --disable-zip
 
       - run: opam exec -- make
 
