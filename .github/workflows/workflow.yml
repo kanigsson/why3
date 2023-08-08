@@ -40,11 +40,13 @@ jobs:
 
       - name: Set Staging env var (Windows)
         if: ${{matrix.os}} == 'windows-latest'
-        run: | "STAGING_AREA=${{github.workspace}} -replace '\\' '/'" >> $GITHUB_ENV
+        run: |
+          "STAGING_AREA=${{github.workspace}} -replace '\\' '/'" >> $GITHUB_ENV
 
       - name: Set Staging env var (other)
         if: ${{matrix.os}} != 'windows-latest'
-        run: | "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
+        run: |
+          "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
 
       - run: opam exec -- ./configure --prefix="${{env.STAGING_AREA}}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
