@@ -33,8 +33,19 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
-      - run: opam depext camlzip zarith re seq why3
-      - run: opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
+      - name: Setup Packages
+        run:
+          - opam depext camlzip zarith re seq why3
+          - opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
+
+      - name: Set Staging env var (Windows)
+        if: ${{matrix.os}} == 'windows-latest'
+        run: | "STAGING_AREA=${{github.workspace}} -replace '\\' '/'" >> $GITHUB_ENV
+
+      - name: Set Staging env var (other)
+        if: ${{matrix.os}} != 'windows-latest'
+        run: | "STAGING_AREA=${{github.workspace}}" >> $GITHUB_ENV
+
       - run: opam exec -- ./configure --prefix="'${{github.workspace}}/staging'" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
       - run: opam exec -- make
