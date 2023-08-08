@@ -35,8 +35,14 @@ jobs:
 
       - run: opam depext camlzip zarith re seq why3
       - run: opam install camlzip dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
-      - run: opam exec -- ./configure --prefix=/tmp/why3install --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
+      - run: opam exec -- ./configure --prefix="${GITHUB_WORKSPACE}/staging" --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml 
 
       - run: opam exec -- make
 
       - run: opam exec -- make install_spark2014
+
+      - name: Upload package
+        uses: actions/upload-artifact@v3
+        with:
+          name: why3pack
+          path: staging
