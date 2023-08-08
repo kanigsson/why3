@@ -44,5 +44,5 @@ jobs:
       - name: Upload package
         uses: actions/upload-artifact@v3
         with:
-          name: why3pack
+          name: why3pack-${{matrix-os}}
           path: staging
