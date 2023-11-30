@@ -8,7 +8,7 @@ get_abs_filename() {
 TARGET=$(get_abs_filename $1)
 TARGETSLASH=${TARGET//\\//}
 
-echo $TARGETSLASH
+set -x
 opam depext zarith re seq why3
 opam install dune dune-configurator menhir num ocamlgraph re seq yojson zarith sexplib ppx_sexp_conv ppx_deriving
 opam exec -- ./configure --prefix=$TARGETSLASH --enable-relocation --disable-emacs-compilation --disable-hypothesis-selection --disable-js-of-ocaml --disable-zip
