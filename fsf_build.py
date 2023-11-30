@@ -69,7 +69,7 @@ def main():
     run(
         [
             "bash",
-            "configure",
+            "./configure",
             "--prefix=" + compute_targetdir(args.prefix),
         ]
         + configure_opts,
