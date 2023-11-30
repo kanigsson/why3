@@ -71,7 +71,7 @@ def main():
     run(["opam", "install"] + install)
     run(
         [
-            "./configure",
+            os.path.join(os.getcwd(), "configure"),
             "--prefix=" + compute_targetdir(args.prefix),
         ]
         + configure_opts,
