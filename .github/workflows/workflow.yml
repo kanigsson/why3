@@ -38,6 +38,10 @@ jobs:
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
 
+      - name: Setup external dependencies
+        run: |
+          opam depext zarith re seq why3
+
       - name: Call build script
         run: |
           opam exec -- python fsf_build.py --prefix=staging

@@ -64,7 +64,7 @@ def compute_targetdir(prefix=None):
 
 def main():
     args = parseargs()
-    run(["opam", "depext"] + depext)
+    # run(["opam", "depext"] + depext)
     run(["opam", "install"] + install)
     run(
         [
