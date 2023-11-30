@@ -37,6 +37,7 @@ def parseargs():
     parser.add_argument(
         "--prefix",
         dest="prefix",
+        default="staging",
         help="target dir for the install",
     )
     args = parser.parse_args()
@@ -60,24 +61,21 @@ def run(args, shell=False):
 
 
 def compute_targetdir(prefix=None):
-    if not prefix:
-        prefix = "staging"
     return os.path.abspath(prefix)
 
 
 def main():
     args = parseargs()
-    run(["opam", "depext"] + depext)
-    run(["opam", "install"] + install)
-    os.environ["PATH"] += os.pathsep + os.getcwd()
-    print(os.environ["PATH"])
     run(
         [
+            "bash",
             "configure",
             "--prefix=" + compute_targetdir(args.prefix),
         ]
         + configure_opts,
     )
+    run(["opam", "depext"] + depext)
+    run(["opam", "install"] + install)
     run(["make"])
     run(["make", "install_spark2014"])
 
