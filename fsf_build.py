@@ -50,9 +50,12 @@ def print_command(args):
     sys.stdout.flush()
 
 
-def run(args):
+def run(args, shell=False):
     print_command(args)
-    p = subprocess.run(args)
+    if shell:
+        p = subprocess.run(" ".join(args), shell=True)
+    else:
+        p = subprocess.run(args)
     p.check_returncode()
 
 
@@ -71,9 +74,11 @@ def main():
             "./configure",
             "--prefix=" + compute_targetdir(args.prefix),
         ]
-        + configure_opts
+        + configure_opts,
+        shell=True,
     )
     run(["make"])
     run(["make", "install_spark2014"])
+
 
 main()
