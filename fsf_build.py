@@ -69,13 +69,14 @@ def main():
     args = parseargs()
     run(["opam", "depext"] + depext)
     run(["opam", "install"] + install)
+    os.environ["PATH"] += os.pathsep + os.getcwd()
+    print(os.environ["PATH"])
     run(
         [
-            os.path.join(os.getcwd(), "configure"),
+            "configure",
             "--prefix=" + compute_targetdir(args.prefix),
         ]
         + configure_opts,
-        shell=True,
     )
     run(["make"])
     run(["make", "install_spark2014"])
