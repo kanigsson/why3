@@ -40,7 +40,7 @@ jobs:
 
       - name: Call build script
         run: |
-          opam exec -- bash ./fsf_build.sh
+          opam exec -- bash ./fsf_build.sh staging
 
       - name: Upload package
         uses: actions/upload-artifact@v3
