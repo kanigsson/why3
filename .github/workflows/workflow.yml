@@ -40,7 +40,7 @@ jobs:
 
       - name: Call build script
         run: |
-          ./fsf_build.sh
+          bash ./fsf_build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v3
