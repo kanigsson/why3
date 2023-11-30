@@ -52,7 +52,7 @@ def print_command(args):
 
 def run(args):
     print_command(args)
-    p = subprocess.run(args, shell=True)
+    p = subprocess.run(args)
     p.check_returncode()
 
 
@@ -64,7 +64,7 @@ def compute_targetdir(prefix=None):
 
 def main():
     args = parseargs()
-    # run(["opam", "depext"] + depext)
+    run(["opam", "depext"] + depext)
     run(["opam", "install"] + install)
     run(
         [
