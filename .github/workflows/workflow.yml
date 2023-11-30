@@ -40,7 +40,7 @@ jobs:
 
       - name: Call build script
         run: |
-          opam exec -- python fsf_build.py --prefix=staging
+          ./fsf_build.sh
 
       - name: Upload package
         uses: actions/upload-artifact@v3
